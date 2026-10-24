@@ -13,7 +13,17 @@ export type Workspace = {
   note: string | null;
   /** Unix epoch milliseconds. */
   createdAt: number;
+  /** In the order added; unique case-insensitively (spec §6.2). */
+  tags: string[];
 };
+
+/** The edit dialog's fields. A blank note is saved as none. */
+export type WorkspaceEdit = { name: string; note: string; tags: string[] };
+
+export type WorkspaceError =
+  | { kind: "emptyName"; message: string }
+  | { kind: "noSuchWorkspace"; message: string }
+  | CommandError;
 
 /** Every command error carries a `kind` and a human-readable `message`. */
 export type CommandError = { kind: "internal"; message: string };
@@ -55,6 +65,19 @@ export const api = {
 
   addWorkspace(name: string, path: string): Promise<Result<Workspace, AddWorkspaceError>> {
     return call("add_workspace", { name, path });
+  },
+
+  updateWorkspace(id: number, edit: WorkspaceEdit): Promise<Result<Workspace, WorkspaceError>> {
+    return call("update_workspace", { id, ...edit });
+  },
+
+  setPinned(id: number, pinned: boolean): Promise<Result<Workspace, WorkspaceError>> {
+    return call("set_workspace_pinned", { id, pinned });
+  },
+
+  /** Deletes the Workspace's row and tags (spec §4.3). */
+  removeWorkspace(id: number): Promise<Result<null, WorkspaceError>> {
+    return call("remove_workspace", { id });
   },
 
   /** Native folder picker; `null` when cancelled. */
