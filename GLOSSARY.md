@@ -5,7 +5,7 @@ A desktop app that keeps a named index of the directories where you run AI codin
 ## Language
 
 **Workspace**:
-A directory the user has named and launches Agents in.
+A directory the user has named and launches Agents in. If its directory moves, the Workspace keeps its former paths, so Sessions run there still belong to it.
 _Avoid_: Project (Claude Code uses that word for its own storage folders), folder, repo
 
 **Agent**:
@@ -15,3 +15,7 @@ _Avoid_: Tool, assistant, bot
 **Session**:
 One conversation with an Agent in a Workspace. It can be resumed or continued across several runs and stays the same Session; forking it starts a new one. An Agent's subagents belong to the Session that spawned them and are not Sessions themselves.
 _Avoid_: Run, chat
+
+**Suggestion**:
+A directory where an Agent's Sessions have run that is not yet a Workspace. The user accepts it by naming it, which makes it a Workspace, or dismisses it so it stays hidden.
+_Avoid_: Candidate, import
