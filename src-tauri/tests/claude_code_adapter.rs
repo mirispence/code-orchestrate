@@ -81,6 +81,20 @@ fn an_npm_cmd_shim_is_wrapped_in_cmd_k() {
 
 #[cfg(windows)]
 #[test]
+fn cmd_metacharacters_in_an_unquoted_shim_path_are_caret_escaped() {
+    let root = tempfile::tempdir().unwrap();
+    let bin = root.path().join("Tom&Jerry");
+    std::fs::create_dir(&bin).unwrap();
+    let shim = touch(&bin, "claude.cmd");
+    let agent = ClaudeCode::with_search_path(vec![bin.clone()]);
+
+    let cmd = agent.launch_command(&workspace(), &LaunchMode::New).unwrap();
+
+    assert_eq!(cmd.args, ["/k".to_owned(), shim.replace('&', "^&")]);
+}
+
+#[cfg(windows)]
+#[test]
 fn the_first_directory_on_the_search_path_wins() {
     let first = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();

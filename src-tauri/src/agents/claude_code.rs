@@ -78,13 +78,31 @@ impl AgentAdapter for ClaudeCode {
         Ok(if is_batch_script(&executable) {
             // A `.cmd` (npm shim) cannot be the direct target of process
             // creation; `cmd /k` runs it and keeps the tab open afterwards.
-            let mut args = vec!["/k".to_owned(), executable];
+            let mut args = vec!["/k".to_owned(), escape_for_cmd(&executable)];
             args.extend(agent_args);
             LaunchCommand { program: "cmd".to_owned(), args, cwd }
         } else {
             LaunchCommand { program: executable, args: agent_args, cwd }
         })
     }
+}
+
+/// `cmd /k` reparses its command line, so an unquoted `&`, `|`, `<`, `>` or
+/// `^` (legal in a Windows user name, hence in an npm prefix) would split or
+/// redirect it. A path without whitespace reaches cmd unquoted, so caret-escape
+/// those; a path with whitespace is quoted, and inside quotes they are literal.
+fn escape_for_cmd(arg: &str) -> String {
+    if arg.chars().any(char::is_whitespace) {
+        return arg.to_owned();
+    }
+    let mut escaped = String::with_capacity(arg.len());
+    for c in arg.chars() {
+        if matches!(c, '&' | '|' | '<' | '>' | '^') {
+            escaped.push('^');
+        }
+        escaped.push(c);
+    }
+    escaped
 }
 
 /// A `.cmd` or `.bat` file, which only `cmd` can run.
