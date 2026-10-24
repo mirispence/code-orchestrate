@@ -48,6 +48,8 @@ export default function App() {
       setSuggestions(sg);
       setLoadError(null);
     } catch (e) {
+      if (id < reloadApplied.current) return;
+      reloadApplied.current = id;
       setLoadError(e instanceof Error ? e.message : String(e));
     }
   }, []);
