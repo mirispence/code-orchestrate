@@ -13,5 +13,5 @@ A coding CLI the app can launch in a Workspace, such as Claude Code, Codex, or A
 _Avoid_: Tool, assistant, bot
 
 **Session**:
-One run of an Agent in a Workspace, from start to exit.
-_Avoid_: Run, conversation, chat
+One conversation with an Agent in a Workspace. It can be resumed or continued across several runs and stays the same Session; forking it starts a new one. An Agent's subagents belong to the Session that spawned them and are not Sessions themselves.
+_Avoid_: Run, chat
