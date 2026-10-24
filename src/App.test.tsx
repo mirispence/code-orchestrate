@@ -16,6 +16,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
       updateWorkspace: vi.fn(),
       setPinned: vi.fn(),
       removeWorkspace: vi.fn(),
+      getSettings: vi.fn(),
+      setSetting: vi.fn(),
+      resetSettings: vi.fn(),
     },
   };
 });
@@ -47,6 +50,10 @@ async function clickAddWorkspace(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([]);
+  mocked.getSettings.mockResolvedValue({
+    ok: true,
+    value: { values: { theme: "system" }, warnings: {}, fileError: null },
+  });
 });
 
 describe("App shell", () => {

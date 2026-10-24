@@ -36,6 +36,31 @@ export type AddWorkspaceError =
   | { kind: "pathTaken"; message: string; workspaceId: number; workspaceName: string }
   | CommandError;
 
+/**
+ * Every setting by its dotted `settings.json` key (spec §9.1). Mirrors `DEFS`
+ * in `src-tauri/src/settings.rs`; add a setting in both places.
+ */
+export type SettingValues = {
+  theme: "system" | "light" | "dark";
+};
+
+export type SettingKey = keyof SettingValues;
+
+/** The effective settings: defaults filled in, invalid values replaced. */
+export type SettingsSnapshot = {
+  values: SettingValues;
+  /** Key -> why the file's value was ignored (shown inline). */
+  warnings: Partial<Record<SettingKey, string>>;
+  /** Why the whole file was ignored; saves are refused until fixed or reset. */
+  fileError: string | null;
+};
+
+export type SettingsError =
+  | { kind: "unknownKey"; message: string; key: string }
+  | { kind: "invalidValue"; message: string; key: string }
+  | { kind: "fileInvalid"; message: string }
+  | CommandError;
+
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 /** Normalise a rejected `invoke` into a `{ kind, message }` error. */
@@ -78,6 +103,24 @@ export const api = {
   /** Deletes the Workspace's row and tags (spec §4.3). */
   removeWorkspace(id: number): Promise<Result<null, WorkspaceError>> {
     return call("remove_workspace", { id });
+  },
+
+  /** Re-read settings.json; the backend also applies it (theme). */
+  getSettings(): Promise<Result<SettingsSnapshot, SettingsError>> {
+    return call("get_settings");
+  },
+
+  /** Save one setting (autosave); returns the new snapshot. */
+  setSetting<K extends SettingKey>(
+    key: K,
+    value: SettingValues[K],
+  ): Promise<Result<SettingsSnapshot, SettingsError>> {
+    return call("set_setting", { key, value });
+  },
+
+  /** Replace settings.json with the defaults, even when it is invalid. */
+  resetSettings(): Promise<Result<SettingsSnapshot, SettingsError>> {
+    return call("reset_settings");
   },
 
   /** Native folder picker; `null` when cancelled. */

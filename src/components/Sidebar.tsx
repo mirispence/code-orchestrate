@@ -1,4 +1,4 @@
-import { Inbox, Plus, Star } from "lucide-react";
+import { Inbox, Plus, Settings, Star } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ type SidebarProps = {
   onSelectWorkspace: (id: number) => void;
   onAddWorkspace: () => void;
   onOpenSuggestions: () => void;
+  onOpenSettings: () => void;
+  settingsOpen: boolean;
 };
 
 export function Sidebar({
@@ -22,6 +24,8 @@ export function Sidebar({
   onSelectWorkspace,
   onAddWorkspace,
   onOpenSuggestions,
+  onOpenSettings,
+  settingsOpen,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
   const [chosenTagKeys, setChosenTagKeys] = useState<string[]>([]);
@@ -90,6 +94,18 @@ export function Sidebar({
       {unpinned.length > 0 && (
         <WorkspaceList label="All" workspaces={unpinned} selectedId={selectedId} onSelect={onSelectWorkspace} />
       )}
+      <div className="mt-auto flex items-center justify-end gap-1 pt-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Settings"
+          aria-pressed={settingsOpen}
+          title="Settings"
+          onClick={onOpenSettings}
+        >
+          <Settings />
+        </Button>
+      </div>
     </aside>
   );
 }
