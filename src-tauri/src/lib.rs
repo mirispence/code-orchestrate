@@ -3,6 +3,7 @@
 
 pub mod commands;
 pub mod paths;
+pub mod settings;
 pub mod store;
 pub mod workspaces;
 
@@ -18,12 +19,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Follow the OS light/dark theme (spec §8.4).
-            app.handle().set_theme(None);
-
             // %APPDATA%\com.mirispence.code-orchestrate\ on Windows.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+
+            // The theme follows the OS unless settings.json overrides it (spec §8.4).
+            let settings = settings::SettingsFile::new(data_dir.join(settings::SETTINGS_FILE_NAME));
+            commands::apply_settings(app.handle(), &settings.load());
+            app.manage::<commands::AppSettings>(Arc::new(Mutex::new(settings)));
             let store = store::Store::open(&data_dir.join(DB_FILE_NAME))?;
             app.manage::<commands::AppStore>(Arc::new(Mutex::new(store)));
             Ok(())
@@ -31,6 +34,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_workspaces,
             commands::add_workspace,
+            commands::get_settings,
+            commands::set_setting,
+            commands::reset_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

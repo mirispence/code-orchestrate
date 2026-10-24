@@ -4,8 +4,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::settings::{SettingsError, SettingsFile, Snapshot, Theme};
 use crate::store::{Store, Workspace};
 use crate::workspaces::{self, AddWorkspaceError};
 
@@ -63,4 +64,64 @@ pub async fn add_workspace(
         workspaces::add_workspace(s, &name, &path)
     })
     .await
+}
+
+/// The app's settings file. The mutex serialises read-modify-write saves.
+pub type AppSettings = Arc<Mutex<SettingsFile>>;
+
+/// Run `work` with the locked settings file on a blocking worker thread,
+/// then apply the resulting snapshot to the app (theme).
+async fn with_settings(
+    app: &AppHandle,
+    settings: &AppSettings,
+    work: impl FnOnce(&SettingsFile) -> Result<Snapshot, SettingsError> + Send + 'static,
+) -> Result<Snapshot, SettingsError> {
+    let settings = Arc::clone(settings);
+    let internal = |e: String| SettingsError::Internal { message: e };
+    let snapshot = tauri::async_runtime::spawn_blocking(move || {
+        let file = settings.lock().map_err(|e| internal(e.to_string()))?;
+        work(&file)
+    })
+    .await
+    .map_err(|e| internal(e.to_string()))??;
+    apply_settings(app, &snapshot);
+    Ok(snapshot)
+}
+
+/// Make the running app reflect `snapshot`. The webview follows the window
+/// theme through `prefers-color-scheme` (spec §8.4).
+pub fn apply_settings(app: &AppHandle, snapshot: &Snapshot) {
+    app.set_theme(match snapshot.theme() {
+        Theme::System => None,
+        Theme::Light => Some(tauri::Theme::Light),
+        Theme::Dark => Some(tauri::Theme::Dark),
+    });
+}
+
+/// Re-read `settings.json` (startup and window focus) and apply it.
+#[tauri::command]
+pub async fn get_settings(
+    app: AppHandle,
+    settings: State<'_, AppSettings>,
+) -> Result<Snapshot, SettingsError> {
+    with_settings(&app, &settings, |f| Ok(f.load())).await
+}
+
+#[tauri::command]
+pub async fn set_setting(
+    app: AppHandle,
+    settings: State<'_, AppSettings>,
+    key: String,
+    value: serde_json::Value,
+) -> Result<Snapshot, SettingsError> {
+    with_settings(&app, &settings, move |f| f.set(&key, value)).await
+}
+
+/// Reset to defaults: replaces the file, even an invalid one.
+#[tauri::command]
+pub async fn reset_settings(
+    app: AppHandle,
+    settings: State<'_, AppSettings>,
+) -> Result<Snapshot, SettingsError> {
+    with_settings(&app, &settings, |f| f.reset()).await
 }
