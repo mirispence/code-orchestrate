@@ -69,23 +69,25 @@ pub async fn add_workspace(
 /// The app's settings file. The mutex serialises read-modify-write saves.
 pub type AppSettings = Arc<Mutex<SettingsFile>>;
 
-/// Run `work` with the locked settings file on a blocking worker thread,
-/// then apply the resulting snapshot to the app (theme).
+/// Run `work` with the locked settings file on a blocking worker thread and
+/// apply the resulting snapshot (theme) before releasing the lock, so
+/// overlapping operations apply in the same order they touched the file.
 async fn with_settings(
     app: &AppHandle,
     settings: &AppSettings,
     work: impl FnOnce(&SettingsFile) -> Result<Snapshot, SettingsError> + Send + 'static,
 ) -> Result<Snapshot, SettingsError> {
     let settings = Arc::clone(settings);
+    let app = app.clone();
     let internal = |e: String| SettingsError::Internal { message: e };
-    let snapshot = tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         let file = settings.lock().map_err(|e| internal(e.to_string()))?;
-        work(&file)
+        let snapshot = work(&file)?;
+        apply_settings(&app, &snapshot);
+        Ok(snapshot)
     })
     .await
-    .map_err(|e| internal(e.to_string()))??;
-    apply_settings(app, &snapshot);
-    Ok(snapshot)
+    .map_err(|e| internal(e.to_string()))?
 }
 
 /// Make the running app reflect `snapshot`. The webview follows the window

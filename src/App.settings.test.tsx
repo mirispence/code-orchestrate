@@ -163,4 +163,27 @@ describe("settings.json reloading", () => {
 
     await waitFor(() => expect(within(themeGroup()).getByRole("radio", { name: "Light" })).toBeChecked());
   });
+
+  it("ignores a re-read that started before a newer save finished", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await openSettings(user);
+
+    let finishStaleRead!: () => void;
+    mocked.getSettings.mockReturnValue(
+      new Promise((resolve) => {
+        finishStaleRead = () => resolve({ ok: true, value: snapshot() });
+      }),
+    );
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    mocked.setSetting.mockResolvedValue({ ok: true, value: snapshot({ values: { theme: "dark" } }) });
+    await user.click(within(themeGroup()).getByRole("radio", { name: "Dark" }));
+    await waitFor(() => expect(within(themeGroup()).getByRole("radio", { name: "Dark" })).toBeChecked());
+
+    await act(async () => finishStaleRead());
+
+    expect(within(themeGroup()).getByRole("radio", { name: "Dark" })).toBeChecked();
+  });
 });
