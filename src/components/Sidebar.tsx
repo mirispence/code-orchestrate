@@ -1,4 +1,4 @@
-import { Inbox, Plus } from "lucide-react";
+import { Inbox, Plus, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { Workspace } from "@/lib/api";
@@ -10,6 +10,8 @@ type SidebarProps = {
   onSelectWorkspace: (id: number) => void;
   onAddWorkspace: () => void;
   onOpenSuggestions: () => void;
+  onOpenSettings: () => void;
+  settingsOpen: boolean;
 };
 
 export function Sidebar({
@@ -18,6 +20,8 @@ export function Sidebar({
   onSelectWorkspace,
   onAddWorkspace,
   onOpenSuggestions,
+  onOpenSettings,
+  settingsOpen,
 }: SidebarProps) {
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-3 border-r bg-sidebar p-3 text-sidebar-foreground">
@@ -40,6 +44,18 @@ export function Sidebar({
           onSelect={onSelectWorkspace}
         />
       )}
+      <div className="mt-auto flex items-center justify-end gap-1 pt-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Settings"
+          aria-pressed={settingsOpen}
+          title="Settings"
+          onClick={onOpenSettings}
+        >
+          <Settings />
+        </Button>
+      </div>
     </aside>
   );
 }

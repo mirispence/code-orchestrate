@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AddWorkspaceDialog } from "@/components/AddWorkspaceDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { SettingsPage } from "@/components/SettingsPage";
 import { Sidebar } from "@/components/Sidebar";
 import { WorkspaceDetail } from "@/components/WorkspaceDetail";
 import { Button } from "@/components/ui/button";
 import { api, type Workspace } from "@/lib/api";
+import { useSettings } from "@/lib/useSettings";
 
 // Suggestions are wired up by a later ticket.
 const notYet = () => {};
@@ -15,6 +17,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pickedPath, setPickedPath] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settings = useSettings();
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   const reload = useCallback(async () => {
     try {
@@ -34,9 +39,14 @@ export default function App() {
     if (path !== null) setPickedPath(path);
   }
 
+  function selectWorkspace(id: number) {
+    setSettingsOpen(false);
+    setSelectedId(id);
+  }
+
   function showWorkspace(id: number) {
     setPickedPath(null);
-    setSelectedId(id);
+    selectWorkspace(id);
   }
 
   const selected = workspaces.find((ws) => ws.id === selectedId) ?? null;
@@ -46,9 +56,11 @@ export default function App() {
       <Sidebar
         workspaces={workspaces}
         selectedId={selectedId}
-        onSelectWorkspace={setSelectedId}
+        onSelectWorkspace={selectWorkspace}
         onAddWorkspace={addWorkspace}
         onOpenSuggestions={notYet}
+        onOpenSettings={() => setSettingsOpen(true)}
+        settingsOpen={settingsOpen}
       />
       <main className="min-w-0 flex-1">
         {loadError !== null && (
@@ -62,7 +74,9 @@ export default function App() {
             </Button>
           </div>
         )}
-        {selected ? (
+        {settingsOpen ? (
+          <SettingsPage settings={settings} onClose={closeSettings} />
+        ) : selected ? (
           <WorkspaceDetail workspace={selected} />
         ) : workspaces.length === 0 && loadError === null ? (
           <EmptyState onAddWorkspace={addWorkspace} onOpenSuggestions={notYet} />
