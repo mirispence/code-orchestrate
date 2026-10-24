@@ -65,6 +65,32 @@ fn resume_passes_the_session_id() {
     assert_eq!(cmd.args, ["--resume", "0b9f-session"]);
 }
 
+#[test]
+fn the_version_command_runs_claude_version_in_the_given_directory() {
+    let bin = tempfile::tempdir().unwrap();
+    let exe = touch(bin.path(), if cfg!(windows) { "claude.exe" } else { "claude" });
+    let agent = ClaudeCode::with_search_path(vec![bin.path().to_path_buf()]);
+
+    let cmd = agent.version_command(r"C:\Users\me").unwrap();
+
+    assert_eq!(cmd.program, exe);
+    assert_eq!(cmd.args, ["--version"]);
+    assert_eq!(cmd.cwd, r"C:\Users\me");
+}
+
+#[cfg(windows)]
+#[test]
+fn the_version_command_wraps_an_npm_shim_too() {
+    let bin = tempfile::tempdir().unwrap();
+    let shim = touch(bin.path(), "claude.cmd");
+    let agent = ClaudeCode::with_search_path(vec![bin.path().to_path_buf()]);
+
+    let cmd = agent.version_command(r"C:\Users\me").unwrap();
+
+    assert_eq!(cmd.program, "cmd");
+    assert_eq!(cmd.args, ["/k".to_owned(), shim, "--version".to_owned()]);
+}
+
 #[cfg(windows)]
 #[test]
 fn an_npm_cmd_shim_is_wrapped_in_cmd_k() {

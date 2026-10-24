@@ -111,4 +111,7 @@ pub trait AgentAdapter: Send + Sync {
     /// record with a working directory); `Err` when it cannot be read now, so
     /// the scan retries it next time.
     fn parse_source(&self, path: &Path) -> std::io::Result<Option<SessionSummary>>;
+    /// A harmless command run in `cwd` (e.g. `claude --version`), used to
+    /// test a terminal from Settings.
+    fn version_command(&self, cwd: &str) -> Result<LaunchCommand, LaunchCommandError>;
 }

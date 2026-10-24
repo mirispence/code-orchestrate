@@ -77,7 +77,17 @@ beforeEach(() => {
   });
   mocked.getSettings.mockResolvedValue({
     ok: true,
-    value: { values: { theme: "system" }, warnings: {}, fileError: null },
+    value: {
+      values: {
+        theme: "system",
+        "terminal.preset": "windowsTerminal",
+        "terminal.windowsTerminal.target": "newWindow",
+        "terminal.custom": null,
+      },
+      warnings: {},
+      fileError: null,
+      choices: {},
+    },
   });
   mocked.agentStatus.mockResolvedValue({
     id: "claude-code",

@@ -156,6 +156,9 @@ impl AgentAdapter for FlakyReads {
     fn launch_command(&self, p: &NormalizedPath, m: &LaunchMode) -> Result<LaunchCommand, LaunchCommandError> {
         self.inner.launch_command(p, m)
     }
+    fn version_command(&self, cwd: &str) -> Result<LaunchCommand, LaunchCommandError> {
+        self.inner.version_command(cwd)
+    }
     fn list_sources(&self) -> Vec<SourceKey> {
         self.inner.list_sources()
     }

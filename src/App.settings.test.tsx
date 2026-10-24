@@ -29,8 +29,15 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 const mocked = vi.mocked(api);
 
+const defaults: SettingsSnapshot["values"] = {
+  theme: "system",
+  "terminal.preset": "windowsTerminal",
+  "terminal.windowsTerminal.target": "newWindow",
+  "terminal.custom": null,
+};
+
 function snapshot(overrides: Partial<SettingsSnapshot> = {}): SettingsSnapshot {
-  return { values: { theme: "system" }, warnings: {}, fileError: null, ...overrides };
+  return { values: defaults, warnings: {}, fileError: null, choices: {}, ...overrides };
 }
 
 const ws: Workspace = {
@@ -81,7 +88,7 @@ describe("Settings page", () => {
   });
 
   it("autosaves a theme change and shows the saved value", async () => {
-    mocked.setSetting.mockResolvedValue({ ok: true, value: snapshot({ values: { theme: "dark" } }) });
+    mocked.setSetting.mockResolvedValue({ ok: true, value: snapshot({ values: { ...defaults, theme: "dark" } }) });
     const user = userEvent.setup();
     render(<App />);
     await openSettings(user);
@@ -172,7 +179,7 @@ describe("settings.json reloading", () => {
     const user = userEvent.setup();
     render(<App />);
     await openSettings(user);
-    mocked.getSettings.mockResolvedValue({ ok: true, value: snapshot({ values: { theme: "light" } }) });
+    mocked.getSettings.mockResolvedValue({ ok: true, value: snapshot({ values: { ...defaults, theme: "light" } }) });
 
     await act(async () => {
       fireEvent.focus(window);
@@ -195,7 +202,7 @@ describe("settings.json reloading", () => {
     await act(async () => {
       fireEvent.focus(window);
     });
-    mocked.setSetting.mockResolvedValue({ ok: true, value: snapshot({ values: { theme: "dark" } }) });
+    mocked.setSetting.mockResolvedValue({ ok: true, value: snapshot({ values: { ...defaults, theme: "dark" } }) });
     await user.click(within(themeGroup()).getByRole("radio", { name: "Dark" }));
     await waitFor(() => expect(within(themeGroup()).getByRole("radio", { name: "Dark" })).toBeChecked());
 
