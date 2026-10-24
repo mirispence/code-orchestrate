@@ -13,6 +13,8 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 
+use crate::launch::{CustomTemplate, LaunchError, Terminal};
+
 /// The settings file's name inside the app data folder (spec §4.1).
 pub const SETTINGS_FILE_NAME: &str = "settings.json";
 
@@ -22,13 +24,56 @@ struct Def {
     default: fn() -> Value,
     /// `Err` holds a human-readable reason, shown as the inline warning.
     check: fn(&Value) -> Result<(), String>,
+    /// The values a choice setting offers on this platform (empty: free-form).
+    choices: &'static [&'static str],
 }
 
 /// Every setting the app knows (spec §9.1).
-const DEFS: &[Def] = &[Def { key: "theme", default: || json!("system"), check: check_theme }];
+const DEFS: &[Def] = &[
+    Def { key: "theme", default: || json!("system"), check: check_theme, choices: THEMES },
+    Def { key: "terminal.preset", default: || json!(PRESETS[0]), check: check_preset, choices: PRESETS },
+    Def {
+        key: "terminal.windowsTerminal.target",
+        default: || json!("newWindow"),
+        check: check_wt_target,
+        choices: WT_TARGETS,
+    },
+    Def { key: "terminal.custom", default: || Value::Null, check: check_custom, choices: &[] },
+];
+
+const THEMES: &[&str] = &["system", "light", "dark"];
+/// Non-Windows platforms offer only Custom in v1 (spec §7.2). The first is the default.
+const PRESETS: &[&str] = if cfg!(windows) { &["windowsTerminal", "console", "custom"] } else { &["custom"] };
+const WT_TARGETS: &[&str] = &["newWindow", "newTab"];
 
 fn check_theme(value: &Value) -> Result<(), String> {
-    one_of(value, &["system", "light", "dark"])
+    one_of(value, THEMES)
+}
+
+fn check_preset(value: &Value) -> Result<(), String> {
+    one_of(value, PRESETS)
+}
+
+fn check_wt_target(value: &Value) -> Result<(), String> {
+    one_of(value, WT_TARGETS)
+}
+
+/// `null` (none) or an argv array that [`CustomTemplate`] accepts.
+fn check_custom(value: &Value) -> Result<(), String> {
+    match value {
+        Value::Null => Ok(()),
+        _ => custom_template(value).map(drop),
+    }
+}
+
+fn custom_template(value: &Value) -> Result<CustomTemplate, String> {
+    let not_argv = || "The custom terminal must be an array of strings".to_string();
+    let argv = value.as_array().ok_or_else(not_argv)?;
+    let argv = argv
+        .iter()
+        .map(|a| a.as_str().map(str::to_owned).ok_or_else(not_argv))
+        .collect::<Result<Vec<_>, _>>()?;
+    CustomTemplate::new(argv)
 }
 
 /// Accept only one of the given strings.
@@ -63,9 +108,29 @@ pub struct Snapshot {
     /// Why the whole file was ignored (invalid JSON, unreadable). While set,
     /// saves are refused until the file is fixed or reset.
     pub file_error: Option<String>,
+    /// Choice setting's dotted key -> the values offered on this platform.
+    pub choices: BTreeMap<String, Vec<Value>>,
 }
 
 impl Snapshot {
+    /// The terminal Sessions open in (spec §7.2).
+    pub fn terminal(&self) -> Result<Terminal, LaunchError> {
+        let value = |key: &str| self.values.get(key).cloned().unwrap_or(Value::Null);
+        match value("terminal.preset").as_str() {
+            Some("console") => Ok(Terminal::ConsoleWindow),
+            Some("custom") => match custom_template(&value("terminal.custom")) {
+                Ok(template) => Ok(Terminal::Custom(template)),
+                Err(_) => Err(LaunchError::TerminalNotConfigured {
+                    message: "No custom terminal is set. Add a template in Settings › Terminal.".into(),
+                }),
+            },
+            _ => Ok(match value("terminal.windowsTerminal.target").as_str() {
+                Some("newTab") => Terminal::WindowsTerminalNewTab,
+                _ => Terminal::WindowsTerminalNewWindow,
+            }),
+        }
+    }
+
     pub fn theme(&self) -> Theme {
         match self.values.get("theme").and_then(Value::as_str) {
             Some("light") => Theme::Light,
@@ -201,7 +266,12 @@ fn snapshot(raw: &Raw) -> Snapshot {
         };
         values.insert(def.key.to_string(), value);
     }
-    Snapshot { values, warnings, file_error }
+    let choices = DEFS
+        .iter()
+        .filter(|d| !d.choices.is_empty())
+        .map(|d| (d.key.to_string(), d.choices.iter().map(|c| json!(c)).collect()))
+        .collect();
+    Snapshot { values, warnings, file_error, choices }
 }
 
 fn get_path<'a>(root: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {

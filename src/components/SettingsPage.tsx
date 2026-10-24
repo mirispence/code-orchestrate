@@ -1,5 +1,6 @@
 import { useEffect, useId, type ReactNode } from "react";
 
+import { CustomTerminalSetting } from "@/components/CustomTerminalSetting";
 import { Button } from "@/components/ui/button";
 import type { SettingKey, SettingValues } from "@/lib/api";
 import type { SettingsState } from "@/lib/useSettings";
@@ -33,6 +34,12 @@ export function SettingsPage({ settings, onClose }: SettingsPageProps) {
     disabled: locked,
     onChange: (value: SettingValues[K]) => void change(key, value),
   });
+  /** Only the options this platform offers (e.g. Custom alone off Windows). */
+  const offered = <K extends SettingKey>(key: K, options: { value: SettingValues[K] & string; label: string }[]) => {
+    const choices = snapshot?.choices[key];
+    return choices ? options.filter((o) => choices.includes(o.value)) : options;
+  };
+  const preset = snapshot?.values["terminal.preset"];
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -71,6 +78,29 @@ export function SettingsPage({ settings, onClose }: SettingsPageProps) {
           ]}
           {...row("theme")}
         />
+      </SettingsSection>
+
+      <SettingsSection title="Terminal">
+        <ChoiceSetting
+          label="Preset"
+          options={offered("terminal.preset", [
+            { value: "windowsTerminal", label: "Windows Terminal" },
+            { value: "console", label: "Console window" },
+            { value: "custom", label: "Custom" },
+          ])}
+          {...row("terminal.preset")}
+        />
+        {preset === "windowsTerminal" && (
+          <ChoiceSetting
+            label="Open in"
+            options={[
+              { value: "newWindow", label: "New window" },
+              { value: "newTab", label: "New tab in most recent window" },
+            ]}
+            {...row("terminal.windowsTerminal.target")}
+          />
+        )}
+        {preset === "custom" && <CustomTerminalSetting {...row("terminal.custom")} />}
       </SettingsSection>
     </div>
   );

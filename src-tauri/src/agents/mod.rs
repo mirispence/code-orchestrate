@@ -80,4 +80,7 @@ pub trait AgentAdapter: Send + Sync {
         workspace_path: &NormalizedPath,
         mode: &LaunchMode,
     ) -> Result<LaunchCommand, LaunchCommandError>;
+    /// A harmless command run in `cwd` (e.g. `claude --version`), used to
+    /// test a terminal from Settings.
+    fn version_command(&self, cwd: &str) -> Result<LaunchCommand, LaunchCommandError>;
 }

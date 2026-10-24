@@ -4,12 +4,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::settings::{SettingsError, SettingsFile, Snapshot, Theme};
 use crate::agents::claude_code::ClaudeCode;
 use crate::agents::{self, AgentStatus, LaunchMode};
-use crate::launch::{self, LaunchError, OsSpawner, Terminal};
+use crate::launch::{self, CustomTemplate, LaunchError, OsSpawner, Terminal};
 use crate::store::{Store, Workspace, WorkspaceEdit};
 use crate::workspaces::{self, AddWorkspaceError, WorkspaceError};
 
@@ -180,9 +180,16 @@ pub enum SessionStart {
     Continue,
 }
 
+/// The terminal chosen in Settings, read fresh so a hand edit applies at once.
+fn configured_terminal(settings: &AppSettings) -> Result<Terminal, LaunchError> {
+    let file = settings.lock().map_err(|e| LaunchError::Internal(e.to_string()))?;
+    file.load().terminal()
+}
+
 #[tauri::command]
 pub async fn launch_session(
     store: State<'_, AppStore>,
+    settings: State<'_, AppSettings>,
     workspace_id: i64,
     mode: SessionStart,
 ) -> Result<(), LaunchError> {
@@ -190,8 +197,24 @@ pub async fn launch_session(
         SessionStart::New => LaunchMode::New,
         SessionStart::Continue => LaunchMode::Continue,
     };
+    let settings = Arc::clone(&settings);
     with_store(&store, LaunchError::Internal, move |s| {
-        launch::launch_session(s, &agent(), Terminal::WindowsTerminalNewWindow, &OsSpawner, workspace_id, &mode)
+        let terminal = configured_terminal(&settings)?;
+        launch::launch_session(s, &agent(), terminal, &OsSpawner, workspace_id, &mode)
     })
     .await
+}
+
+/// Settings › Terminal › Test: run `claude --version` in the home directory
+/// through the custom argv `template` (spec §9.2).
+#[tauri::command]
+pub async fn test_terminal(app: AppHandle, template: Vec<String>) -> Result<(), LaunchError> {
+    let template = CustomTemplate::new(template).map_err(|message| LaunchError::TerminalNotConfigured { message })?;
+    let home = app.path().home_dir().map_err(|e| LaunchError::Internal(e.to_string()))?;
+    let home = home.to_string_lossy().into_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        launch::test_terminal(&agent(), &Terminal::Custom(template), &OsSpawner, &home)
+    })
+    .await
+    .map_err(|e| LaunchError::Internal(e.to_string()))?
 }
