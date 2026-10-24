@@ -4,6 +4,7 @@ import { AddWorkspaceDialog } from "@/components/AddWorkspaceDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { Sidebar } from "@/components/Sidebar";
 import { WorkspaceDetail } from "@/components/WorkspaceDetail";
+import { Button } from "@/components/ui/button";
 import { api, type Workspace } from "@/lib/api";
 
 // Suggestions are wired up by a later ticket.
@@ -13,9 +14,15 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pickedPath, setPickedPath] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    setWorkspaces(await api.listWorkspaces());
+    try {
+      setWorkspaces(await api.listWorkspaces());
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
   }, []);
 
   useEffect(() => {
@@ -44,9 +51,20 @@ export default function App() {
         onOpenSuggestions={notYet}
       />
       <main className="min-w-0 flex-1">
+        {loadError !== null && (
+          <div
+            role="alert"
+            className="m-4 flex items-center justify-between gap-4 rounded-md border border-destructive/50 p-3 text-sm text-destructive"
+          >
+            <span>Could not load Workspaces: {loadError}</span>
+            <Button size="sm" variant="outline" onClick={() => void reload()}>
+              Retry
+            </Button>
+          </div>
+        )}
         {selected ? (
           <WorkspaceDetail workspace={selected} />
-        ) : workspaces.length === 0 ? (
+        ) : workspaces.length === 0 && loadError === null ? (
           <EmptyState onAddWorkspace={addWorkspace} onOpenSuggestions={notYet} />
         ) : null}
       </main>

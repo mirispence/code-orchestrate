@@ -172,3 +172,21 @@ describe("Add Workspace", () => {
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });
+
+describe("Loading Workspaces", () => {
+  it("shows a load failure with a retry, not an empty state", async () => {
+    mocked.listWorkspaces.mockRejectedValueOnce(new Error("disk I/O error"));
+    mocked.listWorkspaces.mockResolvedValueOnce([workspace({ name: "alpha" })]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("disk I/O error");
+    expect(screen.queryByRole("heading", { name: /no workspaces yet/i })).not.toBeInTheDocument();
+
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+
+    expect(await within(allList()).findByText("alpha")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});

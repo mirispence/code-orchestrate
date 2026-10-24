@@ -6,7 +6,7 @@ pub mod paths;
 pub mod store;
 pub mod workspaces;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::Manager;
 
@@ -25,7 +25,7 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let store = store::Store::open(&data_dir.join(DB_FILE_NAME))?;
-            app.manage::<commands::AppStore>(Mutex::new(store));
+            app.manage::<commands::AppStore>(Arc::new(Mutex::new(store)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
