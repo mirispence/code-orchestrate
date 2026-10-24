@@ -29,7 +29,8 @@ type EditWorkspaceDialogProps = {
 export function EditWorkspaceDialog({ workspace, onClose, ...rest }: EditWorkspaceDialogProps) {
   return (
     <Dialog open={workspace !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      {/* Bounded to the window so many tags never push Save off-screen. */}
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto">
         {workspace !== null && (
           // Keyed so each opening starts from the saved values.
           <EditWorkspaceForm key={workspace.id} workspace={workspace} {...rest} />
