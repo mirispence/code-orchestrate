@@ -18,6 +18,11 @@ vi.mock("@/lib/api", async (importOriginal) => {
       resetSettings: vi.fn(),
       agentStatus: vi.fn(),
       launchSession: vi.fn(),
+      listSuggestions: vi.fn(),
+      dismissPath: vi.fn(),
+      startScan: vi.fn(),
+      scanRunning: vi.fn(),
+      onScanState: vi.fn(),
     },
   };
 });
@@ -51,6 +56,9 @@ function themeGroup() {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([ws]);
+  mocked.listSuggestions.mockResolvedValue([]);
+  mocked.scanRunning.mockResolvedValue(false);
+  mocked.onScanState.mockResolvedValue(() => {});
   mocked.getSettings.mockResolvedValue({ ok: true, value: snapshot() });
   mocked.agentStatus.mockResolvedValue({
     id: "claude-code",

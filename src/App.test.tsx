@@ -21,6 +21,11 @@ vi.mock("@/lib/api", async (importOriginal) => {
       resetSettings: vi.fn(),
       agentStatus: vi.fn(),
       launchSession: vi.fn(),
+      listSuggestions: vi.fn(),
+      dismissPath: vi.fn(),
+      startScan: vi.fn(),
+      scanRunning: vi.fn(),
+      onScanState: vi.fn(),
     },
   };
 });
@@ -52,6 +57,9 @@ async function clickAddWorkspace(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([]);
+  mocked.listSuggestions.mockResolvedValue([]);
+  mocked.scanRunning.mockResolvedValue(false);
+  mocked.onScanState.mockResolvedValue(() => {});
   mocked.getSettings.mockResolvedValue({
     ok: true,
     value: { values: { theme: "system" }, warnings: {}, fileError: null },
