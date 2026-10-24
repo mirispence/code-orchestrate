@@ -138,6 +138,12 @@ fn normalising_is_idempotent() {
 }
 
 #[test]
+fn keeps_whitespace_that_is_part_of_a_folder_name() {
+    let raw = if cfg!(windows) { "C:\\a\\b\u{a0}" } else { "/a/b\u{a0}" };
+    assert!(norm(raw).ends_with("b\u{a0}"), "{:?}", norm(raw));
+}
+
+#[test]
 fn rejects_an_empty_path() {
     assert!(normalize("").is_err());
     assert!(normalize("   ").is_err());

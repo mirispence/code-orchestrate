@@ -26,13 +26,13 @@ pub struct NormalizedPath(String);
 
 /// Normalise a raw path. Relative paths resolve against the current directory.
 pub fn normalize(raw: &str) -> Result<NormalizedPath, PathError> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
+    // Whitespace can be part of a real folder name, so it is never trimmed.
+    if raw.trim().is_empty() {
         return Err(PathError::Empty);
     }
     // `std::path::absolute` is lexical (no symlink resolution) on every platform.
-    let absolute = std::path::absolute(trimmed)
-        .map_err(|e| PathError::NotAbsolute(format!("{trimmed}: {e}")))?;
+    let absolute =
+        std::path::absolute(raw).map_err(|e| PathError::NotAbsolute(format!("{raw}: {e}")))?;
     Ok(NormalizedPath(render(&absolute)))
 }
 
