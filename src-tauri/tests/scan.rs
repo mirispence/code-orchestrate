@@ -3,10 +3,14 @@
 //! against fixture transcript roots, never the user's real `~/.claude`.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use code_orchestrate_lib::agents::claude_code::ClaudeCode;
+use code_orchestrate_lib::agents::{
+    AgentAdapter, Capabilities, LaunchCommand, LaunchCommandError, LaunchMode, SessionSummary, SourceKey,
+};
 use code_orchestrate_lib::attribution::{self, Suggestion};
 use code_orchestrate_lib::paths::{NormalizedPath, normalize};
 use code_orchestrate_lib::scan;
@@ -128,6 +132,55 @@ fn a_changed_transcript_is_parsed_again() {
     assert_eq!(report.parsed, 1);
     assert_eq!(f.suggestions()[0].last_seen, Some(1_792_900_800_000));
     assert_eq!(f.suggestions()[0].session_count, 1);
+}
+
+/// Delegates to Claude Code but fails to read every transcript while `locked`.
+struct FlakyReads {
+    inner: ClaudeCode,
+    locked: AtomicBool,
+}
+
+impl AgentAdapter for FlakyReads {
+    fn id(&self) -> &'static str {
+        self.inner.id()
+    }
+    fn display_name(&self) -> &'static str {
+        self.inner.display_name()
+    }
+    fn capabilities(&self) -> Capabilities {
+        self.inner.capabilities()
+    }
+    fn resolve_executable(&self) -> Option<String> {
+        None
+    }
+    fn launch_command(&self, p: &NormalizedPath, m: &LaunchMode) -> Result<LaunchCommand, LaunchCommandError> {
+        self.inner.launch_command(p, m)
+    }
+    fn list_sources(&self) -> Vec<SourceKey> {
+        self.inner.list_sources()
+    }
+    fn parse_source(&self, path: &Path) -> std::io::Result<Option<SessionSummary>> {
+        if self.locked.load(Ordering::SeqCst) {
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "locked"));
+        }
+        self.inner.parse_source(path)
+    }
+}
+
+#[test]
+fn a_transcript_that_could_not_be_read_is_retried_next_scan() {
+    let f = Fixture::new();
+    let app = f.dir("app");
+    f.transcript("p", "s1", app.as_str(), &["2026-10-24T04:00:00Z"]);
+    let agent = FlakyReads { inner: f.agent(), locked: AtomicBool::new(true) };
+    scan::run(&f.store, &agent).unwrap();
+    assert!(f.suggestions().is_empty());
+
+    agent.locked.store(false, Ordering::SeqCst);
+    let report = scan::run(&f.store, &agent).unwrap();
+
+    assert_eq!(report.parsed, 1);
+    assert_eq!(paths(&f.suggestions()), vec![app.to_string()]);
 }
 
 #[test]

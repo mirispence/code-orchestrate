@@ -32,13 +32,20 @@ pub enum ScanError {
 pub fn run(store: &Mutex<Store>, agent: &dyn AgentAdapter) -> Result<ScanReport, ScanError> {
     let known = store.lock().map_err(|_| ScanError::Poisoned)?.source_keys(agent.id())?;
     let sources = agent.list_sources();
-    let changed: Vec<ScannedSource> = sources
+    let changed: Vec<&_> = sources
         .iter()
         .filter(|key| known.get(key.path.to_string_lossy().as_ref()) != Some(&(key.mtime, key.size)))
-        .map(|key| ScannedSource { key: key.clone(), session: agent.parse_source(&key.path) })
         .collect();
-    if !changed.is_empty() {
-        store.lock().map_err(|_| ScanError::Poisoned)?.record_scan(agent.id(), &changed)?;
+    // A file that cannot be read now keeps no source key, so the next scan retries it.
+    let parsed: Vec<ScannedSource> = changed
+        .iter()
+        .filter_map(|key| {
+            let session = agent.parse_source(&key.path).ok()?;
+            Some(ScannedSource { key: (*key).clone(), session })
+        })
+        .collect();
+    if !parsed.is_empty() {
+        store.lock().map_err(|_| ScanError::Poisoned)?.record_scan(agent.id(), &parsed)?;
     }
     Ok(ScanReport { sources: sources.len(), parsed: changed.len() })
 }

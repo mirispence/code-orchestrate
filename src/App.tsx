@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddWorkspaceDialog } from "@/components/AddWorkspaceDialog";
 import { EditWorkspaceDialog } from "@/components/EditWorkspaceDialog";
@@ -35,9 +35,15 @@ export default function App() {
   }, []);
 
   // Stored records render at once; a finished scan reloads them (spec §5.1).
+  // Reloads can overlap, so a response older than one already applied is dropped.
+  const reloadsSent = useRef(0);
+  const reloadApplied = useRef(0);
   const reload = useCallback(async () => {
+    const id = ++reloadsSent.current;
     try {
       const [ws, sg] = await Promise.all([api.listWorkspaces(), api.listSuggestions()]);
+      if (id < reloadApplied.current) return;
+      reloadApplied.current = id;
       setWorkspaces(ws);
       setSuggestions(sg);
       setLoadError(null);

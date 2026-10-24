@@ -117,7 +117,7 @@ impl AgentAdapter for ClaudeCode {
         }
     }
 
-    fn parse_source(&self, path: &Path) -> Option<SessionSummary> {
+    fn parse_source(&self, path: &Path) -> std::io::Result<Option<SessionSummary>> {
         transcript::parse(path)
     }
 }

@@ -120,15 +120,19 @@ describe("Suggestions inbox", () => {
   });
 
   it("adds a Suggestion as a Workspace with an editable name pre-filled from the folder", async () => {
-    mocked.listSuggestions.mockResolvedValueOnce([suggestion()]).mockResolvedValue([]);
-    mocked.addWorkspace.mockResolvedValue({ ok: true, value: added });
+    let stored = [suggestion()];
+    mocked.listSuggestions.mockImplementation(async () => stored);
+    mocked.addWorkspace.mockImplementation(async () => {
+      stored = [];
+      mocked.listWorkspaces.mockResolvedValue([added]);
+      return { ok: true, value: added };
+    });
     const user = userEvent.setup();
     render(<App />);
     await openSuggestions(user);
 
     const name = row("E:\\Programming\\my-app").getByRole("textbox", { name: "Name" });
     expect(name).toHaveValue("my-app");
-    mocked.listWorkspaces.mockResolvedValue([added]);
     await user.clear(name);
     await user.type(name, "My App");
     await user.click(row("E:\\Programming\\my-app").getByRole("button", { name: "Add" }));
@@ -154,8 +158,12 @@ describe("Suggestions inbox", () => {
   });
 
   it("dismisses a Suggestion", async () => {
-    mocked.listSuggestions.mockResolvedValueOnce([suggestion()]).mockResolvedValue([]);
-    mocked.dismissPath.mockResolvedValue({ ok: true, value: null });
+    let stored = [suggestion()];
+    mocked.listSuggestions.mockImplementation(async () => stored);
+    mocked.dismissPath.mockImplementation(async () => {
+      stored = [];
+      return { ok: true, value: null };
+    });
     const user = userEvent.setup();
     render(<App />);
     await openSuggestions(user);
@@ -210,6 +218,13 @@ describe("Scanning", () => {
 
     expect(await sidebar().findByRole("button", { name: "Suggestions (1)" })).toBeInTheDocument();
     expect(refresh).not.toHaveAttribute("aria-busy", "true");
+  });
+
+  it("reloads once subscribed, in case the startup scan finished before it was listening", async () => {
+    mocked.listSuggestions.mockResolvedValueOnce([]).mockResolvedValue([suggestion()]);
+    render(<App />);
+
+    expect(await sidebar().findByRole("button", { name: "Suggestions (1)" })).toBeInTheDocument();
   });
 
   it("shows the spinner when it mounts during the startup scan", async () => {

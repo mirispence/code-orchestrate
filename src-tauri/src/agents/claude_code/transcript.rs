@@ -38,10 +38,15 @@ pub fn list_sources(projects: &Path) -> Vec<SourceKey> {
 /// One file = one Session; the file name is the session ID. The working
 /// directory is the first record's `cwd`, never the folder name (the folder
 /// encoding is lossy).
-pub fn parse(path: &Path) -> Option<SessionSummary> {
-    let session_id = path.file_stem()?.to_str()?.to_owned();
-    let bytes = std::fs::read(path).ok()?;
-    let text = String::from_utf8_lossy(&bytes);
+pub fn parse(path: &Path) -> std::io::Result<Option<SessionSummary>> {
+    let Some(session_id) = path.file_stem().and_then(|s| s.to_str()).map(str::to_owned) else {
+        return Ok(None);
+    };
+    let bytes = std::fs::read(path)?;
+    Ok(summarize(session_id, path, &String::from_utf8_lossy(&bytes)))
+}
+
+fn summarize(session_id: String, path: &Path, text: &str) -> Option<SessionSummary> {
 
     let mut first_cwd = None;
     let mut started_at: Option<i64> = None;
@@ -115,10 +120,11 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
         let padded = format!("{:0<3}", &frac[..frac.len().min(3)]);
         millis = padded.parse::<i64>().ok()?;
     }
-    let offset_minutes = match raw.get(i..)? {
-        "Z" | "z" => 0,
-        rest if rest.len() == 6 && matches!(&rest[..1], "+" | "-") && &rest[3..4] == ":" => {
-            let sign = if rest.starts_with('-') { -1 } else { 1 };
+    // Compared as bytes: a malformed suffix may hold multi-byte characters.
+    let offset_minutes = match &b[i..] {
+        b"Z" | b"z" => 0,
+        [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
+            let sign = if *sign == b'-' { -1 } else { 1 };
             sign * (num(i + 1, 2)? * 60 + num(i + 4, 2)?)
         }
         _ => return None,

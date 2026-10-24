@@ -107,7 +107,8 @@ pub trait AgentAdapter: Send + Sync {
     /// Every transcript file in the Agent's store, reading metadata only.
     /// An unreadable or missing store yields none.
     fn list_sources(&self) -> Vec<SourceKey>;
-    /// Parse one transcript. `None` when it holds no Session yet (no record
-    /// with a working directory) or cannot be read.
-    fn parse_source(&self, path: &Path) -> Option<SessionSummary>;
+    /// Parse one transcript. `Ok(None)` when it holds no Session yet (no
+    /// record with a working directory); `Err` when it cannot be read now, so
+    /// the scan retries it next time.
+    fn parse_source(&self, path: &Path) -> std::io::Result<Option<SessionSummary>>;
 }

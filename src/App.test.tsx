@@ -206,8 +206,11 @@ describe("Add Workspace", () => {
 
 describe("Loading Workspaces", () => {
   it("shows a load failure with a retry, not an empty state", async () => {
-    mocked.listWorkspaces.mockRejectedValueOnce(new Error("disk I/O error"));
-    mocked.listWorkspaces.mockResolvedValueOnce([workspace({ name: "alpha" })]);
+    let failing = true;
+    mocked.listWorkspaces.mockImplementation(async () => {
+      if (failing) throw new Error("disk I/O error");
+      return [workspace({ name: "alpha" })];
+    });
     const user = userEvent.setup();
     render(<App />);
 
@@ -215,6 +218,7 @@ describe("Loading Workspaces", () => {
     expect(alert).toHaveTextContent("disk I/O error");
     expect(screen.queryByRole("heading", { name: /no workspaces yet/i })).not.toBeInTheDocument();
 
+    failing = false;
     await user.click(within(alert).getByRole("button", { name: "Retry" }));
 
     expect(await within(allList()).findByText("alpha")).toBeInTheDocument();

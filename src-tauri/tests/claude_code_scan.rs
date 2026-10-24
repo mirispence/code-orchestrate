@@ -47,7 +47,7 @@ fn user(cwd: &str, timestamp: &str) -> String {
 }
 
 fn parse(agent: &ClaudeCode, path: &Path) -> code_orchestrate_lib::agents::SessionSummary {
-    agent.parse_source(path).expect("a Session")
+    agent.parse_source(path).expect("readable").expect("a Session")
 }
 
 #[test]
@@ -109,6 +109,17 @@ fn unknown_records_bad_lines_and_a_half_written_last_line_are_skipped() {
 }
 
 #[test]
+fn malformed_non_ascii_timestamps_are_skipped() {
+    let root = Root::new();
+    let odd = serde_json::json!({"type": "user", "cwd": CWD, "timestamp": "2026-10-24T04:00:00éabcd"}).to_string();
+    let path = root.write("p", "s.jsonl", &[&odd, &user(CWD, "2026-10-24T04:00:00Z")]);
+
+    let session = parse(&root.agent(), &path);
+    assert_eq!(session.started_at, Some(1_792_814_400_000));
+    assert_eq!(session.last_activity_at, Some(1_792_814_400_000));
+}
+
+#[test]
 fn sidechain_records_do_not_count() {
     let root = Root::new();
     let sidechain = serde_json::json!({
@@ -126,7 +137,7 @@ fn sidechain_records_do_not_count() {
 fn a_transcript_with_no_working_directory_is_not_a_session_yet() {
     let root = Root::new();
     let path = root.write("p", "s.jsonl", &[r#"{"type":"ai-title","aiTitle":"t"}"#]);
-    assert_eq!(root.agent().parse_source(&path), None);
+    assert_eq!(root.agent().parse_source(&path).unwrap(), None);
 }
 
 #[test]

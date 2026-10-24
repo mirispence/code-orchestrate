@@ -15,10 +15,13 @@ export function useScan(onFinished: () => void) {
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
+    // Set once any event arrives: events are newer than the status query below.
+    let heard = false;
     void (async () => {
       // Subscribe before asking, so a scan that ends in between is not missed.
       const stop = await api.onScanState((running) => {
         if (!active) return;
+        heard = true;
         setScanning(running);
         if (!running) finished.current();
       });
@@ -27,9 +30,11 @@ export function useScan(onFinished: () => void) {
         return;
       }
       unlisten = stop;
-      if (await api.scanRunning()) {
-        if (active) setScanning(true);
-      }
+      const running = await api.scanRunning();
+      if (!active || heard) return;
+      // A scan that finished before we listened went unheard, so reload anyway.
+      if (running) setScanning(true);
+      else finished.current();
     })();
     return () => {
       active = false;
