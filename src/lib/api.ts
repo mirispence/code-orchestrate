@@ -32,6 +32,11 @@ export type AddWorkspaceError =
  */
 export type SettingValues = {
   theme: "system" | "light" | "dark";
+  /** Non-Windows platforms offer only `custom` (see `choices`). */
+  "terminal.preset": "windowsTerminal" | "console" | "custom";
+  "terminal.windowsTerminal.target": "newWindow" | "newTab";
+  /** The custom argv template; must contain `{command}` as an argument. */
+  "terminal.custom": string[] | null;
 };
 
 export type SettingKey = keyof SettingValues;
@@ -43,6 +48,8 @@ export type SettingsSnapshot = {
   warnings: Partial<Record<SettingKey, string>>;
   /** Why the whole file was ignored; saves are refused until fixed or reset. */
   fileError: string | null;
+  /** Choice setting -> the values offered on this platform. */
+  choices: Partial<Record<SettingKey, string[]>>;
 };
 
 export type SettingsError =
@@ -68,6 +75,7 @@ export type LaunchError =
   | { kind: "executableNotFound"; message: string; name: string }
   | { kind: "workspaceNotFound"; message: string; workspaceId: number }
   | { kind: "spawnFailed"; message: string; program: string; osError: string }
+  | { kind: "terminalNotConfigured"; message: string }
   | CommandError;
 
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
@@ -129,6 +137,11 @@ export const api = {
   /** Open a terminal running the Agent in the Workspace's directory. */
   launchSession(workspaceId: number, mode: LaunchMode): Promise<Result<void, LaunchError>> {
     return call("launch_session", { workspaceId, mode });
+  },
+
+  /** Settings › Terminal › Test: run `claude --version` in the home directory through the template. */
+  testTerminal(template: string[]): Promise<Result<void, LaunchError>> {
+    return call("test_terminal", { template });
   },
 
   /** Native folder picker; `null` when cancelled. */

@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{AgentAdapter, Capabilities, LaunchCommand, LaunchCommandError, LaunchMode};
+use crate::launch::escape_for_cmd;
 use crate::paths::NormalizedPath;
 
 /// The executable's bare name, looked up on the search path.
@@ -66,15 +67,25 @@ impl AgentAdapter for ClaudeCode {
         workspace_path: &NormalizedPath,
         mode: &LaunchMode,
     ) -> Result<LaunchCommand, LaunchCommandError> {
-        let executable = self
-            .resolve_executable()
-            .ok_or_else(|| LaunchCommandError::ExecutableNotFound { name: EXECUTABLE_NAME.into() })?;
         let agent_args = match mode {
             LaunchMode::New => vec![],
             LaunchMode::Continue => vec!["--continue".to_owned()],
             LaunchMode::Resume(session_id) => vec!["--resume".to_owned(), session_id.clone()],
         };
-        let cwd = workspace_path.as_str().to_owned();
+        self.command(agent_args, workspace_path.as_str().to_owned())
+    }
+
+    fn version_command(&self, cwd: &str) -> Result<LaunchCommand, LaunchCommandError> {
+        self.command(vec!["--version".to_owned()], cwd.to_owned())
+    }
+}
+
+impl ClaudeCode {
+    /// Run the resolved executable with `agent_args` in `cwd`.
+    fn command(&self, agent_args: Vec<String>, cwd: String) -> Result<LaunchCommand, LaunchCommandError> {
+        let executable = self
+            .resolve_executable()
+            .ok_or_else(|| LaunchCommandError::ExecutableNotFound { name: EXECUTABLE_NAME.into() })?;
         Ok(if is_batch_script(&executable) {
             // A `.cmd` (npm shim) cannot be the direct target of process
             // creation; `cmd /k` runs it and keeps the tab open afterwards.
@@ -85,24 +96,6 @@ impl AgentAdapter for ClaudeCode {
             LaunchCommand { program: executable, args: agent_args, cwd }
         })
     }
-}
-
-/// `cmd /k` reparses its command line, so an unquoted `&`, `|`, `<`, `>` or
-/// `^` (legal in a Windows user name, hence in an npm prefix) would split or
-/// redirect it. A path without whitespace reaches cmd unquoted, so caret-escape
-/// those; a path with whitespace is quoted, and inside quotes they are literal.
-fn escape_for_cmd(arg: &str) -> String {
-    if arg.chars().any(char::is_whitespace) {
-        return arg.to_owned();
-    }
-    let mut escaped = String::with_capacity(arg.len());
-    for c in arg.chars() {
-        if matches!(c, '&' | '|' | '<' | '>' | '^') {
-            escaped.push('^');
-        }
-        escaped.push(c);
-    }
-    escaped
 }
 
 /// A `.cmd` or `.bat` file, which only `cmd` can run.

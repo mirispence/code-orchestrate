@@ -6,7 +6,9 @@ use std::io;
 
 use code_orchestrate_lib::agents::LaunchMode;
 use code_orchestrate_lib::agents::claude_code::ClaudeCode;
-use code_orchestrate_lib::launch::{LaunchError, Spawner, Terminal, TerminalCommand, launch_session};
+use code_orchestrate_lib::launch::{
+    CustomTemplate, LaunchError, Spawner, Terminal, TerminalCommand, launch_session, test_terminal,
+};
 use code_orchestrate_lib::store::Store;
 use code_orchestrate_lib::workspaces::add_workspace;
 
@@ -132,6 +134,46 @@ fn an_unknown_workspace_spawns_nothing() {
 
     assert_eq!(err, LaunchError::WorkspaceNotFound { workspace_id: 999 });
     assert!(spawner.spawned.into_inner().is_empty());
+}
+
+#[test]
+fn launches_go_through_the_chosen_terminal() {
+    let f = fixture();
+    let spawner = FakeSpawner::default();
+
+    launch_session(&f.store, &f.agent, Terminal::ConsoleWindow, &spawner, f.workspace_id, &LaunchMode::New).unwrap();
+
+    let spawned = spawner.spawned.into_inner();
+    assert_eq!(spawned[0].program, "cmd.exe");
+    assert_eq!(spawned[0].args, strings(&["/c", "start", "", "/D", &f.workspace_path, &f.claude]));
+}
+
+#[test]
+fn testing_a_terminal_runs_claude_version_in_the_home_directory_through_it() {
+    let f = fixture();
+    let spawner = FakeSpawner::default();
+    let template = CustomTemplate::new(strings(&["alacritty", "--working-directory", "{cwd}", "-e", "{command}"])).unwrap();
+
+    test_terminal(&f.agent, &Terminal::Custom(template), &spawner, r"C:\Users\me").unwrap();
+
+    assert_eq!(
+        spawner.spawned.into_inner(),
+        vec![TerminalCommand {
+            program: "alacritty".into(),
+            args: strings(&["--working-directory", r"C:\Users\me", "-e", &f.claude, "--version"]),
+        }]
+    );
+}
+
+#[test]
+fn testing_a_terminal_reports_a_failed_spawn() {
+    let f = fixture();
+    let spawner = FakeSpawner { fail_with: Some(io::ErrorKind::NotFound), ..Default::default() };
+    let template = CustomTemplate::new(strings(&["nope-term", "{command}"])).unwrap();
+
+    let err = test_terminal(&f.agent, &Terminal::Custom(template), &spawner, r"C:\Users\me").unwrap_err();
+
+    assert!(matches!(err, LaunchError::SpawnFailed { ref program, .. } if program == "nope-term"), "{err:?}");
 }
 
 #[test]
