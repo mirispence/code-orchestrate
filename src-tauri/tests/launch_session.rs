@@ -162,7 +162,7 @@ fn testing_a_terminal_runs_claude_version_in_the_home_directory_through_it() {
         vec![TerminalCommand {
             program: "alacritty".into(),
             args: strings(&["--working-directory", r"C:\Users\me", "-e", &f.claude, "--version"]),
-            current_dir: None,
+            current_dir: Some(r"C:\Users\me".into()),
         }]
     );
 }

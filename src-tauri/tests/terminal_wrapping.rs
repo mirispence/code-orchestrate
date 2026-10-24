@@ -136,7 +136,7 @@ fn a_custom_template_puts_cwd_in_one_argument_and_spreads_the_command() {
                 "--resume".into(),
                 "abc".into(),
             ],
-            current_dir: None,
+            current_dir: Some(r"C:\My Projects\app".into()),
         }
     );
 }
@@ -159,7 +159,7 @@ fn a_custom_template_may_start_with_the_command() {
 
     assert_eq!(
         wrapped,
-        TerminalCommand { program: r"C:\Users\me\.local\bin\claude.exe".into(), args: vec!["--continue".into()], current_dir: None }
+        TerminalCommand { program: r"C:\Users\me\.local\bin\claude.exe".into(), args: vec!["--continue".into()], current_dir: Some(r"E:\w".into()) }
     );
 }
 

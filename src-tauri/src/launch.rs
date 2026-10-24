@@ -177,7 +177,8 @@ impl CustomTemplate {
         }
         // `new` guarantees `{command}`, so argv is never empty.
         let program = argv.remove(0);
-        TerminalCommand { program, args: argv, current_dir: None }
+        // Start in the directory too, for templates without `{cwd}`.
+        TerminalCommand { program, args: argv, current_dir: Some(cmd.cwd.clone()) }
     }
 }
 
@@ -192,7 +193,9 @@ impl Terminal {
                 let mut args = strings(&["/c", "start", "", "/D"]);
                 // cmd expands `%NAME%` even inside quotes, so a directory with
                 // a `%` never goes on its command line: cmd starts there
-                // instead, and `start /D .` hands that directory on.
+                // instead, and `start /D .` hands that directory on. A `%` in
+                // the program or its arguments is not protected: going around
+                // cmd's parsing would mean not using `cmd /c start` at all.
                 let current_dir = if cmd.cwd.contains('%') {
                     args.push(".".into());
                     Some(cmd.cwd.clone())
