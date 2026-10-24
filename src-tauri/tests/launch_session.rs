@@ -75,6 +75,7 @@ fn new_session_spawns_windows_terminal_running_claude_in_the_workspace() {
         vec![TerminalCommand {
             program: "wt.exe".into(),
             args: strings(&["-w", "new", "new-tab", "-d", &f.workspace_path, &f.claude]),
+            current_dir: None,
         }]
     );
 }
@@ -161,6 +162,7 @@ fn testing_a_terminal_runs_claude_version_in_the_home_directory_through_it() {
         vec![TerminalCommand {
             program: "alacritty".into(),
             args: strings(&["--working-directory", r"C:\Users\me", "-e", &f.claude, "--version"]),
+            current_dir: None,
         }]
     );
 }

@@ -86,7 +86,8 @@ export function CustomTerminalSetting({
           }}
           onBlur={commit}
           onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
+            // Esc leaves Settings (unmounting without a blur), so save first.
+            if (e.key === "Enter" || e.key === "Escape") commit();
           }}
         />
         <Button

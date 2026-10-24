@@ -112,6 +112,16 @@ describe("Settings › Terminal", () => {
     expect(change).toHaveBeenCalledWith("terminal.custom", ["alacritty", "--working-directory", "{cwd}", "-e", "{command}"]);
   });
 
+  it("saves an edited template when Esc leaves the page from the field", async () => {
+    const user = userEvent.setup();
+    const { change } = renderPage(snapshot({ "terminal.preset": "custom" }));
+
+    await user.type(templateBox(), "wezterm start {{command}");
+    await user.keyboard("{Escape}");
+
+    expect(change).toHaveBeenCalledWith("terminal.custom", ["wezterm", "start", "{command}"]);
+  });
+
   it("rejects a template without {command} and does not save it", async () => {
     const user = userEvent.setup();
     const { change } = renderPage(snapshot({ "terminal.preset": "custom" }));

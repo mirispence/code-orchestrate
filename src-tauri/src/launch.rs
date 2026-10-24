@@ -70,7 +70,12 @@ pub struct OsSpawner;
 
 impl Spawner for OsSpawner {
     fn spawn(&self, cmd: &TerminalCommand) -> io::Result<()> {
-        std::process::Command::new(&cmd.program).args(&cmd.args).spawn().map(drop)
+        let mut command = std::process::Command::new(&cmd.program);
+        command.args(&cmd.args);
+        if let Some(dir) = &cmd.current_dir {
+            command.current_dir(dir);
+        }
+        command.spawn().map(drop)
     }
 }
 
@@ -117,6 +122,8 @@ fn spawn_in(terminal: &Terminal, spawner: &dyn Spawner, command: &LaunchCommand)
 pub struct TerminalCommand {
     pub program: String,
     pub args: Vec<String>,
+    /// The directory to start the process in; `None` inherits the app's.
+    pub current_dir: Option<String>,
 }
 
 /// How a launch reaches a terminal: the presets from Settings (spec §7.2).
@@ -170,7 +177,7 @@ impl CustomTemplate {
         }
         // `new` guarantees `{command}`, so argv is never empty.
         let program = argv.remove(0);
-        TerminalCommand { program, args: argv }
+        TerminalCommand { program, args: argv, current_dir: None }
     }
 }
 
@@ -183,10 +190,19 @@ impl Terminal {
                 // The first quoted argument to `start` is the window title, so
                 // the empty title keeps a quoted program path from becoming it.
                 let mut args = strings(&["/c", "start", "", "/D"]);
-                args.push(escape_for_cmd(&cmd.cwd));
+                // cmd expands `%NAME%` even inside quotes, so a directory with
+                // a `%` never goes on its command line: cmd starts there
+                // instead, and `start /D .` hands that directory on.
+                let current_dir = if cmd.cwd.contains('%') {
+                    args.push(".".into());
+                    Some(cmd.cwd.clone())
+                } else {
+                    args.push(escape_for_cmd(&cmd.cwd));
+                    None
+                };
                 args.push(escape_for_cmd(&cmd.program));
                 args.extend(cmd.args.iter().map(|a| escape_for_cmd(a)));
-                TerminalCommand { program: "cmd.exe".into(), args }
+                TerminalCommand { program: "cmd.exe".into(), args, current_dir }
             }
             Terminal::Custom(template) => template.wrap(cmd),
         }
@@ -198,7 +214,7 @@ fn windows_terminal(window: &str, cmd: &LaunchCommand) -> TerminalCommand {
     args.push(escape_for_wt(&cmd.cwd));
     args.push(escape_for_wt(&cmd.program));
     args.extend(cmd.args.iter().map(|a| escape_for_wt(a)));
-    TerminalCommand { program: "wt.exe".into(), args }
+    TerminalCommand { program: "wt.exe".into(), args, current_dir: None }
 }
 
 fn strings(items: &[&str]) -> Vec<String> {

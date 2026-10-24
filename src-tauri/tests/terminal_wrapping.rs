@@ -12,7 +12,7 @@ fn claude(cwd: &str, args: &[&str]) -> LaunchCommand {
 }
 
 fn wt(args: &[&str]) -> TerminalCommand {
-    TerminalCommand { program: "wt.exe".into(), args: args.iter().map(|a| a.to_string()).collect() }
+    TerminalCommand { program: "wt.exe".into(), args: args.iter().map(|a| a.to_string()).collect(), current_dir: None }
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn windows_terminal_can_open_a_new_tab_in_the_most_recent_window() {
 }
 
 fn console(args: &[&str]) -> TerminalCommand {
-    TerminalCommand { program: "cmd.exe".into(), args: args.iter().map(|a| a.to_string()).collect() }
+    TerminalCommand { program: "cmd.exe".into(), args: args.iter().map(|a| a.to_string()).collect(), current_dir: None }
 }
 
 #[test]
@@ -136,6 +136,7 @@ fn a_custom_template_puts_cwd_in_one_argument_and_spreads_the_command() {
                 "--resume".into(),
                 "abc".into(),
             ],
+            current_dir: None,
         }
     );
 }
@@ -158,7 +159,7 @@ fn a_custom_template_may_start_with_the_command() {
 
     assert_eq!(
         wrapped,
-        TerminalCommand { program: r"C:\Users\me\.local\bin\claude.exe".into(), args: vec!["--continue".into()] }
+        TerminalCommand { program: r"C:\Users\me\.local\bin\claude.exe".into(), args: vec!["--continue".into()], current_dir: None }
     );
 }
 
@@ -171,6 +172,21 @@ fn a_custom_template_without_command_is_rejected() {
 #[test]
 fn a_custom_template_needs_command_as_a_whole_argument() {
     assert!(template(&["xterm", "-e={command}"]).is_err());
+}
+
+#[test]
+fn a_console_window_keeps_a_percent_in_the_workspace_path_away_from_cmd() {
+    // cmd expands `%NAME%` even inside quotes, so a path with `%` is never put
+    // on cmd's command line: cmd starts in that directory and `start` uses it.
+    let wrapped = Terminal::ConsoleWindow.wrap(&claude(r"C:\repos\%USERNAME% stuff", &[]));
+
+    assert_eq!(
+        wrapped,
+        TerminalCommand {
+            current_dir: Some(r"C:\repos\%USERNAME% stuff".into()),
+            ..console(&["/c", "start", "", "/D", ".", r"C:\Users\me\.local\bin\claude.exe"])
+        }
+    );
 }
 
 #[test]
