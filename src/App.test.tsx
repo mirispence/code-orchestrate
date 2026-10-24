@@ -13,6 +13,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
       listWorkspaces: vi.fn(),
       addWorkspace: vi.fn(),
       pickFolder: vi.fn(),
+      updateWorkspace: vi.fn(),
+      setPinned: vi.fn(),
+      removeWorkspace: vi.fn(),
       getSettings: vi.fn(),
       setSetting: vi.fn(),
       resetSettings: vi.fn(),
@@ -32,6 +35,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     pinned: false,
     note: null,
     createdAt: 1_700_000_000_000,
+    tags: [],
     ...overrides,
   };
 }
@@ -217,5 +221,304 @@ describe("Loading Workspaces", () => {
 
     expect(await within(allList()).findByText("alpha")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+async function selectWorkspace(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const sidebar = screen.getByRole("complementary");
+  await user.click(await within(sidebar).findByRole("button", { name: new RegExp(`^${name}`) }));
+}
+
+async function openEdit(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(within(screen.getByRole("main")).getByRole("button", { name: "Edit" }));
+  return screen.findByRole("dialog", { name: "Edit Workspace" });
+}
+
+describe("Workspace header", () => {
+  it("shows the selected Workspace's name, path, tags, note and Edit", async () => {
+    mocked.listWorkspaces.mockResolvedValue([
+      workspace({ name: "Orchestrate", path: "E:\\code", tags: ["tauri", "personal"], note: "This app." }),
+    ]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Orchestrate");
+
+    const main = screen.getByRole("main");
+    expect(within(main).getByRole("heading", { name: "Orchestrate" })).toBeInTheDocument();
+    expect(within(main).getByText("E:\\code")).toBeInTheDocument();
+    const tags = within(main).getByRole("list", { name: "Tags" });
+    expect(within(tags).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["tauri", "personal"]);
+    expect(within(main).getByText("This app.")).toBeInTheDocument();
+    expect(within(main).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+});
+
+describe("Search and tag chips", () => {
+  const listed = () =>
+    within(screen.getByRole("complementary"))
+      .queryAllByRole("listitem")
+      .map((li) => li.textContent?.replace("Pinned", "").trim());
+
+  beforeEach(() => {
+    mocked.listWorkspaces.mockResolvedValue([
+      workspace({ id: 1, name: "Orchestrate", path: "E:\\Programming\\orch", tags: ["Tauri", "personal"] }),
+      workspace({ id: 2, name: "Wiki", path: "D:\\Writing\\wiki", tags: ["writing", "personal"], note: "Tuesday GAME" }),
+      workspace({ id: 3, name: "Client site", path: "E:\\Work\\acme", tags: ["work"], pinned: true }),
+    ]);
+  });
+
+  async function ready() {
+    render(<App />);
+    await waitFor(() => expect(listed()).toHaveLength(3));
+  }
+
+  it("matches name, path and note, ignoring case", async () => {
+    const user = userEvent.setup();
+    await ready();
+    const search = screen.getByRole("searchbox", { name: "Search Workspaces" });
+
+    await user.type(search, "orCHEST");
+    expect(listed()).toEqual(["Orchestrate"]);
+
+    await user.clear(search);
+    await user.type(search, "e:\\work");
+    expect(listed()).toEqual(["Client site"]);
+
+    await user.clear(search);
+    await user.type(search, "tuesday game");
+    expect(listed()).toEqual(["Wiki"]);
+  });
+
+  it("shows one chip per tag in use, toggling and AND-combining", async () => {
+    const user = userEvent.setup();
+    await ready();
+    const chips = screen.getByRole("group", { name: "Filter by tag" });
+    expect(within(chips).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "personal",
+      "Tauri",
+      "work",
+      "writing",
+    ]);
+
+    const personal = within(chips).getByRole("button", { name: "personal" });
+    await user.click(personal);
+    expect(personal).toHaveAttribute("aria-pressed", "true");
+    expect(listed()).toEqual(["Orchestrate", "Wiki"]);
+
+    await user.click(within(chips).getByRole("button", { name: "writing" }));
+    expect(listed()).toEqual(["Wiki"]);
+
+    await user.click(personal);
+    await user.click(within(chips).getByRole("button", { name: "writing" }));
+    expect(listed()).toHaveLength(3);
+  });
+
+  it("narrows by search and chips together, matching tags case-insensitively", async () => {
+    mocked.listWorkspaces.mockResolvedValue([
+      workspace({ id: 1, name: "One", path: "E:\\one", tags: ["Rust"] }),
+      workspace({ id: 2, name: "Two", path: "E:\\two", tags: ["rust"] }),
+      workspace({ id: 3, name: "Three", path: "E:\\three" }),
+    ]);
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(listed()).toHaveLength(3));
+
+    await user.click(within(screen.getByRole("group", { name: "Filter by tag" })).getByRole("button", { name: "Rust" }));
+    expect(listed()).toEqual(["One", "Two"]);
+
+    await user.type(screen.getByRole("searchbox", { name: "Search Workspaces" }), "two");
+    expect(listed()).toEqual(["Two"]);
+  });
+});
+
+describe("Pinning", () => {
+  function pinnedList() {
+    return screen.getByRole("list", { name: "Pinned" });
+  }
+
+  it("lists a pinned Workspace under Pinned and not under All", async () => {
+    mocked.listWorkspaces.mockResolvedValue([
+      workspace({ id: 1, name: "Starred", path: "E:\\s", pinned: true }),
+      workspace({ id: 2, name: "Plain", path: "E:\\p" }),
+    ]);
+    render(<App />);
+
+    const pinned = await screen.findByRole("list", { name: "Pinned" });
+    expect(within(pinned).getByText("Starred")).toBeInTheDocument();
+    expect(within(allList()).queryByText("Starred")).not.toBeInTheDocument();
+    expect(within(allList()).getByText("Plain")).toBeInTheDocument();
+  });
+
+  it("has no Pinned list when nothing is pinned", async () => {
+    mocked.listWorkspaces.mockResolvedValue([workspace({ name: "Plain" })]);
+    render(<App />);
+
+    await within(await screen.findByRole("list", { name: "All" })).findByText("Plain");
+    expect(screen.queryByRole("list", { name: "Pinned" })).not.toBeInTheDocument();
+  });
+
+  it("pins and unpins from the header", async () => {
+    const ws = workspace({ id: 3, name: "Mine" });
+    mocked.listWorkspaces.mockResolvedValue([ws]);
+    mocked.setPinned.mockResolvedValue({ ok: true, value: { ...ws, pinned: true } });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Mine");
+    mocked.listWorkspaces.mockResolvedValue([{ ...ws, pinned: true }]);
+    await user.click(within(screen.getByRole("main")).getByRole("button", { name: "Pin" }));
+
+    expect(mocked.setPinned).toHaveBeenCalledWith(3, true);
+    expect(await within(pinnedList()).findByText("Mine")).toBeInTheDocument();
+
+    mocked.setPinned.mockResolvedValue({ ok: true, value: ws });
+    mocked.listWorkspaces.mockResolvedValue([ws]);
+    await user.click(within(screen.getByRole("main")).getByRole("button", { name: "Unpin" }));
+
+    expect(mocked.setPinned).toHaveBeenLastCalledWith(3, false);
+    expect(await within(allList()).findByText("Mine")).toBeInTheDocument();
+  });
+});
+
+describe("Edit Workspace", () => {
+  it("changes name, note and tags and saves them", async () => {
+    const ws = workspace({ id: 4, name: "Old", tags: ["keep", "drop"], note: "old note" });
+    mocked.listWorkspaces.mockResolvedValue([ws]);
+    const edited = { ...ws, name: "New", note: "new note", tags: ["keep", "added"] };
+    mocked.updateWorkspace.mockResolvedValue({ ok: true, value: edited });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Old");
+    const dialog = await openEdit(user);
+
+    const name = within(dialog).getByLabelText("Name");
+    expect(name).toHaveValue("Old");
+    await user.clear(name);
+    await user.type(name, "New");
+    const note = within(dialog).getByLabelText("Note");
+    await user.clear(note);
+    await user.type(note, "new note");
+    await user.click(within(dialog).getByRole("button", { name: "Remove tag drop" }));
+    await user.type(within(dialog).getByLabelText("Add tag"), "added{Enter}");
+
+    mocked.listWorkspaces.mockResolvedValue([edited]);
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(mocked.updateWorkspace).toHaveBeenCalledWith(4, {
+      name: "New",
+      note: "new note",
+      tags: ["keep", "added"],
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(within(screen.getByRole("main")).getByRole("heading", { name: "New" })).toBeInTheDocument();
+  });
+
+  it("saves a tag still being typed", async () => {
+    const ws = workspace({ id: 4, name: "Old" });
+    mocked.listWorkspaces.mockResolvedValue([ws]);
+    mocked.updateWorkspace.mockResolvedValue({ ok: true, value: ws });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Old");
+    const dialog = await openEdit(user);
+    await user.type(within(dialog).getByLabelText("Add tag"), "typed");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(mocked.updateWorkspace).toHaveBeenCalledWith(4, { name: "Old", note: "", tags: ["typed"] });
+  });
+
+  it("needs a name before saving", async () => {
+    mocked.listWorkspaces.mockResolvedValue([workspace({ name: "Old" })]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Old");
+    const dialog = await openEdit(user);
+    await user.clear(within(dialog).getByLabelText("Name"));
+
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("ignores a tag that is already on the Workspace in another case", async () => {
+    mocked.listWorkspaces.mockResolvedValue([workspace({ name: "Old", tags: ["Rust"] })]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Old");
+    const dialog = await openEdit(user);
+    await user.type(within(dialog).getByLabelText("Add tag"), "rust{Enter}");
+
+    expect(within(dialog).getAllByRole("button", { name: /^Remove tag/ })).toHaveLength(1);
+  });
+
+  it("offers tags already in use as autocomplete, once each", async () => {
+    mocked.listWorkspaces.mockResolvedValue([
+      workspace({ id: 1, name: "A", path: "E:\\a", tags: ["Rust", "work"] }),
+      workspace({ id: 2, name: "B", path: "E:\\b", tags: ["rust"] }),
+    ]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "B");
+    const dialog = await openEdit(user);
+
+    const input = within(dialog).getByLabelText("Add tag") as HTMLInputElement;
+    expect([...input.list!.options].map((o) => o.value)).toEqual(["work"]);
+  });
+
+  it("removes the Workspace only after confirming", async () => {
+    mocked.listWorkspaces.mockResolvedValue([
+      workspace({ id: 5, name: "Doomed", path: "E:\\doomed" }),
+      workspace({ id: 6, name: "Kept", path: "E:\\kept" }),
+    ]);
+    mocked.removeWorkspace.mockResolvedValue({ ok: true, value: null });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Doomed");
+    const dialog = await openEdit(user);
+    await user.click(within(dialog).getByRole("button", { name: "Remove Workspace" }));
+    expect(mocked.removeWorkspace).not.toHaveBeenCalled();
+
+    mocked.listWorkspaces.mockResolvedValue([workspace({ id: 6, name: "Kept", path: "E:\\kept" })]);
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    expect(mocked.removeWorkspace).toHaveBeenCalledWith(5);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(within(allList()).queryByText("Doomed")).not.toBeInTheDocument());
+    expect(within(screen.getByRole("main")).queryByRole("heading", { name: "Doomed" })).not.toBeInTheDocument();
+  });
+
+  it("can back out of removing", async () => {
+    mocked.listWorkspaces.mockResolvedValue([workspace({ name: "Safe" })]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Safe");
+    const dialog = await openEdit(user);
+    await user.click(within(dialog).getByRole("button", { name: "Remove Workspace" }));
+    await user.click(within(dialog).getByRole("button", { name: "Keep" }));
+
+    expect(mocked.removeWorkspace).not.toHaveBeenCalled();
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("shows a save failure", async () => {
+    mocked.listWorkspaces.mockResolvedValue([workspace({ name: "Old" })]);
+    mocked.updateWorkspace.mockResolvedValue({
+      ok: false,
+      error: { kind: "internal", message: "disk full" },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Old");
+    const dialog = await openEdit(user);
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("disk full");
   });
 });

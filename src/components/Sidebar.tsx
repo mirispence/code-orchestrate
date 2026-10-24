@@ -1,8 +1,12 @@
-import { Inbox, Plus, Settings } from "lucide-react";
+import { Inbox, Plus, Settings, Star } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { Workspace } from "@/lib/api";
+import { tagKey, tagsInUse } from "@/lib/tags";
 import { cn } from "@/lib/utils";
+import { filterWorkspaces } from "@/lib/workspaceFilter";
 
 type SidebarProps = {
   workspaces: Workspace[];
@@ -23,6 +27,21 @@ export function Sidebar({
   onOpenSettings,
   settingsOpen,
 }: SidebarProps) {
+  const [query, setQuery] = useState("");
+  const [chosenTagKeys, setChosenTagKeys] = useState<string[]>([]);
+
+  const chips = tagsInUse(workspaces);
+  // A chosen tag that no Workspace uses any more stops filtering.
+  const activeTagKeys = chosenTagKeys.filter((k) => chips.some((t) => tagKey(t) === k));
+  const shown = filterWorkspaces(workspaces, query, activeTagKeys);
+  // A pinned Workspace appears only under Pinned (spec §8.1).
+  const pinned = shown.filter((ws) => ws.pinned);
+  const unpinned = shown.filter((ws) => !ws.pinned);
+
+  function toggleTag(key: string) {
+    setChosenTagKeys((current) => (current.includes(key) ? current.filter((k) => k !== key) : [...current, key]));
+  }
+
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-3 border-r bg-sidebar p-3 text-sidebar-foreground">
       <div className="flex items-center justify-between gap-2">
@@ -32,17 +51,48 @@ export function Sidebar({
           Add Workspace
         </Button>
       </div>
+      {workspaces.length > 0 && (
+        <Input
+          type="search"
+          aria-label="Search Workspaces"
+          placeholder="Search Workspaces…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
+      {chips.length > 0 && (
+        <div role="group" aria-label="Filter by tag" className="flex flex-wrap gap-1">
+          {chips.map((tag) => {
+            const on = activeTagKeys.includes(tagKey(tag));
+            return (
+              <button
+                key={tagKey(tag)}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleTag(tagKey(tag))}
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-xs",
+                  on ? "bg-brand text-brand-foreground" : "bg-muted text-muted-foreground hover:bg-sidebar-accent",
+                )}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <Button variant="ghost" className="justify-start" onClick={onOpenSuggestions}>
         <Inbox />
         Suggestions
       </Button>
-      {workspaces.length > 0 && (
-        <WorkspaceList
-          label="All"
-          workspaces={workspaces}
-          selectedId={selectedId}
-          onSelect={onSelectWorkspace}
-        />
+      {workspaces.length > 0 && shown.length === 0 && (
+        <p className="px-2 text-sm text-muted-foreground">No matching Workspaces</p>
+      )}
+      {pinned.length > 0 && (
+        <WorkspaceList label="Pinned" workspaces={pinned} selectedId={selectedId} onSelect={onSelectWorkspace} />
+      )}
+      {unpinned.length > 0 && (
+        <WorkspaceList label="All" workspaces={unpinned} selectedId={selectedId} onSelect={onSelectWorkspace} />
       )}
       <div className="mt-auto flex items-center justify-end gap-1 pt-2">
         <Button
@@ -86,11 +136,12 @@ function WorkspaceList({
               title={ws.path}
               onClick={() => onSelect(ws.id)}
               className={cn(
-                "w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent",
+                "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent",
                 ws.id === selectedId && "bg-sidebar-accent font-medium",
               )}
             >
-              {ws.name}
+              <span className="truncate">{ws.name}</span>
+              {ws.pinned && <Star aria-label="Pinned" className="size-3.5 shrink-0 fill-brand text-brand" />}
             </button>
           </li>
         ))}
