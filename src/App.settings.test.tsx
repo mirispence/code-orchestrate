@@ -16,6 +16,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
       getSettings: vi.fn(),
       setSetting: vi.fn(),
       resetSettings: vi.fn(),
+      agentStatus: vi.fn(),
+      launchSession: vi.fn(),
     },
   };
 });
@@ -49,6 +51,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([ws]);
   mocked.getSettings.mockResolvedValue({ ok: true, value: snapshot() });
+  mocked.agentStatus.mockResolvedValue({
+    id: "claude-code",
+    displayName: "Claude Code",
+    capabilities: { continue: true, resume: true, sessionHistory: true },
+    executable: "claude.exe",
+  });
 });
 
 describe("Settings page", () => {
@@ -185,5 +193,22 @@ describe("settings.json reloading", () => {
     await act(async () => finishStaleRead());
 
     expect(within(themeGroup()).getByRole("radio", { name: "Dark" })).toBeChecked();
+  });
+
+  it("is opened from a failed launch's Open Settings action", async () => {
+    mocked.launchSession.mockResolvedValue({
+      ok: false,
+      error: { kind: "executableNotFound", message: "claude was not found", name: "claude" },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "alpha" }));
+
+    const button = await screen.findByRole("button", { name: "New Session" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+    await user.click(await screen.findByRole("button", { name: "Open Settings" }));
+
+    expect(await screen.findByRole("heading", { name: "Settings", level: 2 })).toBeInTheDocument();
   });
 });

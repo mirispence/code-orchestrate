@@ -1,7 +1,9 @@
 //! Code Orchestrate backend. Rust owns all system access (ADR 0001); the
 //! webview reaches the system only through the commands registered here.
 
+pub mod agents;
 pub mod commands;
+pub mod launch;
 pub mod paths;
 pub mod settings;
 pub mod store;
@@ -37,6 +39,8 @@ pub fn run() {
             commands::get_settings,
             commands::set_setting,
             commands::reset_settings,
+            commands::agent_status,
+            commands::launch_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

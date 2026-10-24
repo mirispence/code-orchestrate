@@ -7,6 +7,9 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 
 use crate::settings::{SettingsError, SettingsFile, Snapshot, Theme};
+use crate::agents::claude_code::ClaudeCode;
+use crate::agents::{self, AgentStatus, LaunchMode};
+use crate::launch::{self, LaunchError, OsSpawner, Terminal};
 use crate::store::{Store, Workspace};
 use crate::workspaces::{self, AddWorkspaceError};
 
@@ -126,4 +129,41 @@ pub async fn reset_settings(
     settings: State<'_, AppSettings>,
 ) -> Result<Snapshot, SettingsError> {
     with_settings(&app, &settings, |f| f.reset()).await
+}
+
+/// The v1 Agent. Built per call so its executable is re-resolved every time.
+fn agent() -> ClaudeCode {
+    ClaudeCode::on_path()
+}
+
+/// The Agent's identity, capabilities and resolved executable (or `null`).
+#[tauri::command]
+pub async fn agent_status() -> Result<AgentStatus, InternalError> {
+    tauri::async_runtime::spawn_blocking(|| agents::agent_status(&agent()))
+        .await
+        .map_err(InternalError::new)
+}
+
+/// How the UI asks to start a Session: `"new"` or `"continue"`.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionStart {
+    New,
+    Continue,
+}
+
+#[tauri::command]
+pub async fn launch_session(
+    store: State<'_, AppStore>,
+    workspace_id: i64,
+    mode: SessionStart,
+) -> Result<(), LaunchError> {
+    let mode = match mode {
+        SessionStart::New => LaunchMode::New,
+        SessionStart::Continue => LaunchMode::Continue,
+    };
+    with_store(&store, LaunchError::Internal, move |s| {
+        launch::launch_session(s, &agent(), Terminal::WindowsTerminalNewWindow, &OsSpawner, workspace_id, &mode)
+    })
+    .await
 }

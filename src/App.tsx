@@ -19,6 +19,7 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settings = useSettings();
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   const reload = useCallback(async () => {
@@ -59,7 +60,7 @@ export default function App() {
         onSelectWorkspace={selectWorkspace}
         onAddWorkspace={addWorkspace}
         onOpenSuggestions={notYet}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettings}
         settingsOpen={settingsOpen}
       />
       <main className="min-w-0 flex-1">
@@ -77,7 +78,7 @@ export default function App() {
         {settingsOpen ? (
           <SettingsPage settings={settings} onClose={closeSettings} />
         ) : selected ? (
-          <WorkspaceDetail workspace={selected} />
+          <WorkspaceDetail workspace={selected} onOpenSettings={openSettings} />
         ) : workspaces.length === 0 && loadError === null ? (
           <EmptyState onAddWorkspace={addWorkspace} onOpenSuggestions={notYet} />
         ) : null}

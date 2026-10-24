@@ -16,6 +16,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
       getSettings: vi.fn(),
       setSetting: vi.fn(),
       resetSettings: vi.fn(),
+      agentStatus: vi.fn(),
+      launchSession: vi.fn(),
     },
   };
 });
@@ -49,6 +51,12 @@ beforeEach(() => {
   mocked.getSettings.mockResolvedValue({
     ok: true,
     value: { values: { theme: "system" }, warnings: {}, fileError: null },
+  });
+  mocked.agentStatus.mockResolvedValue({
+    id: "claude-code",
+    displayName: "Claude Code",
+    capabilities: { continue: true, resume: true, sessionHistory: true },
+    executable: "claude.exe",
   });
 });
 

@@ -51,6 +51,25 @@ export type SettingsError =
   | { kind: "fileInvalid"; message: string }
   | CommandError;
 
+/** What an Agent supports; a control is hidden when its flag is off (spec §3.2). */
+export type Capabilities = { continue: boolean; resume: boolean; sessionHistory: boolean };
+
+export type AgentStatus = {
+  id: string;
+  displayName: string;
+  capabilities: Capabilities;
+  /** The resolved executable, or `null` when it is not found. */
+  executable: string | null;
+};
+
+export type LaunchMode = "new" | "continue";
+
+export type LaunchError =
+  | { kind: "executableNotFound"; message: string; name: string }
+  | { kind: "workspaceNotFound"; message: string; workspaceId: number }
+  | { kind: "spawnFailed"; message: string; program: string; osError: string }
+  | CommandError;
+
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 /** Normalise a rejected `invoke` into a `{ kind, message }` error. */
@@ -98,6 +117,18 @@ export const api = {
   /** Replace settings.json with the defaults, even when it is invalid. */
   resetSettings(): Promise<Result<SettingsSnapshot, SettingsError>> {
     return call("reset_settings");
+  },
+
+  /** The Agent's identity, capabilities and executable, resolved now. Throws on an internal error. */
+  async agentStatus(): Promise<AgentStatus> {
+    const result = await call<AgentStatus, CommandError>("agent_status");
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  },
+
+  /** Open a terminal running the Agent in the Workspace's directory. */
+  launchSession(workspaceId: number, mode: LaunchMode): Promise<Result<void, LaunchError>> {
+    return call("launch_session", { workspaceId, mode });
   },
 
   /** Native folder picker; `null` when cancelled. */
