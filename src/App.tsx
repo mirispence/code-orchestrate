@@ -7,7 +7,7 @@ import { WorkspaceDetail } from "@/components/WorkspaceDetail";
 import { Button } from "@/components/ui/button";
 import { api, type Workspace } from "@/lib/api";
 
-// Suggestions are wired up by a later ticket.
+// Suggestions and Settings are wired up by later tickets.
 const notYet = () => {};
 
 export default function App() {
@@ -63,7 +63,7 @@ export default function App() {
           </div>
         )}
         {selected ? (
-          <WorkspaceDetail workspace={selected} />
+          <WorkspaceDetail workspace={selected} onOpenSettings={notYet} />
         ) : workspaces.length === 0 && loadError === null ? (
           <EmptyState onAddWorkspace={addWorkspace} onOpenSuggestions={notYet} />
         ) : null}

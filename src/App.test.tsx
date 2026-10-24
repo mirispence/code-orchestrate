@@ -9,7 +9,13 @@ vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...actual,
-    api: { listWorkspaces: vi.fn(), addWorkspace: vi.fn(), pickFolder: vi.fn() },
+    api: {
+      listWorkspaces: vi.fn(),
+      addWorkspace: vi.fn(),
+      pickFolder: vi.fn(),
+      agentStatus: vi.fn(),
+      launchSession: vi.fn(),
+    },
   };
 });
 
@@ -39,6 +45,12 @@ async function clickAddWorkspace(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([]);
+  mocked.agentStatus.mockResolvedValue({
+    id: "claude-code",
+    displayName: "Claude Code",
+    capabilities: { continue: true, resume: true, sessionHistory: true },
+    executable: "claude.exe",
+  });
 });
 
 describe("App shell", () => {
