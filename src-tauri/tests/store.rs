@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use code_orchestrate_lib::paths::normalize;
-use code_orchestrate_lib::store::{NewWorkspace, SCHEMA_VERSION, Store, StoreError};
+use code_orchestrate_lib::store::{NewWorkspace, SCHEMA_VERSION, Store, StoreError, WorkspaceEdit};
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -169,4 +169,138 @@ fn a_database_from_a_newer_app_is_refused() {
 #[test]
 fn the_database_file_is_code_orchestrate_db() {
     assert_eq!(code_orchestrate_lib::DB_FILE_NAME, "code-orchestrate.db");
+}
+
+// --- Editing, tags, pinning and removal (#18) ---
+
+fn edit(name: &str, note: Option<&str>, tags: &[&str]) -> WorkspaceEdit {
+    WorkspaceEdit {
+        name: name.into(),
+        note: note.map(Into::into),
+        tags: tags.iter().map(|t| t.to_string()).collect(),
+    }
+}
+
+#[test]
+fn editing_changes_name_and_note_and_persists() {
+    let f = fixture();
+    let id = {
+        let store = Store::open(&f.db).unwrap();
+        let ws = store.add_workspace(new_ws("Code", CODE)).unwrap();
+        let edited = store.update_workspace(ws.id, edit(" Renamed ", Some("my notes"), &[])).unwrap();
+        assert_eq!(edited.name, "Renamed");
+        assert_eq!(edited.note.as_deref(), Some("my notes"));
+        ws.id
+    };
+    let reopened = Store::open(&f.db).unwrap();
+    let ws = &reopened.list_workspaces().unwrap()[0];
+    assert_eq!((ws.id, ws.name.as_str(), ws.note.as_deref()), (id, "Renamed", Some("my notes")));
+}
+
+#[test]
+fn an_edit_with_an_empty_name_is_rejected_and_changes_nothing() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let ws = store.add_workspace(new_ws("Code", CODE)).unwrap();
+    assert!(matches!(store.update_workspace(ws.id, edit(" ", None, &["x"])), Err(StoreError::EmptyName)));
+    assert_eq!(store.list_workspaces().unwrap(), vec![ws]);
+}
+
+#[test]
+fn a_blank_note_is_stored_as_none() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let ws = store.add_workspace(new_ws("Code", CODE)).unwrap();
+    assert_eq!(store.update_workspace(ws.id, edit("Code", Some("  "), &[])).unwrap().note, None);
+}
+
+#[test]
+fn tags_are_saved_and_listed_with_the_workspace() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let ws = store.add_workspace(new_ws("Code", CODE)).unwrap();
+    let edited = store.update_workspace(ws.id, edit("Code", None, &["rust", "Work"])).unwrap();
+    assert_eq!(edited.tags, ["rust", "Work"]);
+    assert_eq!(store.list_workspaces().unwrap()[0].tags, ["rust", "Work"]);
+}
+
+#[test]
+fn tags_are_case_insensitive_within_a_workspace_keeping_the_first_spelling() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let ws = store.add_workspace(new_ws("Code", CODE)).unwrap();
+    let edited = store.update_workspace(ws.id, edit("Code", None, &["Rust", "rust ", " ", "RUST"])).unwrap();
+    assert_eq!(edited.tags, ["Rust"]);
+}
+
+#[test]
+fn a_tag_already_in_use_keeps_its_stored_spelling() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let a = store.add_workspace(new_ws("A", CODE)).unwrap();
+    let b = store.add_workspace(new_ws("B", OTHER)).unwrap();
+    store.update_workspace(a.id, edit("A", None, &["Rust"])).unwrap();
+    assert_eq!(store.update_workspace(b.id, edit("B", None, &["rust"])).unwrap().tags, ["Rust"]);
+}
+
+#[test]
+fn tags_in_use_are_listed_and_a_tag_disappears_when_unused() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let a = store.add_workspace(new_ws("A", CODE)).unwrap();
+    let b = store.add_workspace(new_ws("B", OTHER)).unwrap();
+    store.update_workspace(a.id, edit("A", None, &["work", "Rust"])).unwrap();
+    store.update_workspace(b.id, edit("B", None, &["rust"])).unwrap();
+    assert_eq!(store.list_tags().unwrap(), ["Rust", "work"]);
+
+    store.update_workspace(a.id, edit("A", None, &[])).unwrap();
+    assert_eq!(store.list_tags().unwrap(), ["Rust"]);
+}
+
+#[test]
+fn pinning_and_unpinning_persist() {
+    let f = fixture();
+    let id = {
+        let store = Store::open(&f.db).unwrap();
+        let ws = store.add_workspace(new_ws("Code", CODE)).unwrap();
+        assert!(store.set_pinned(ws.id, true).unwrap().pinned);
+        ws.id
+    };
+    let store = Store::open(&f.db).unwrap();
+    assert!(store.list_workspaces().unwrap()[0].pinned);
+    assert!(!store.set_pinned(id, false).unwrap().pinned);
+    assert!(!store.list_workspaces().unwrap()[0].pinned);
+}
+
+#[test]
+fn removing_a_workspace_deletes_its_row_and_tags() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let a = store.add_workspace(new_ws("A", CODE)).unwrap();
+    let b = store.add_workspace(new_ws("B", OTHER)).unwrap();
+    store.update_workspace(a.id, edit("A", None, &["gone", "shared"])).unwrap();
+    store.update_workspace(b.id, edit("B", None, &["shared"])).unwrap();
+
+    store.remove_workspace(a.id).unwrap();
+
+    let names: Vec<_> = store.list_workspaces().unwrap().into_iter().map(|w| w.name).collect();
+    assert_eq!(names, ["B"]);
+    assert_eq!(store.list_tags().unwrap(), ["shared"]);
+    // Its path is free again.
+    store.add_workspace(new_ws("A again", CODE)).unwrap();
+}
+
+#[test]
+fn removing_or_pinning_an_unknown_workspace_fails() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    assert!(matches!(store.remove_workspace(99), Err(StoreError::NoSuchWorkspace(99))));
+    assert!(matches!(store.set_pinned(99, true), Err(StoreError::NoSuchWorkspace(99))));
+}
+
+#[test]
+fn editing_an_unknown_workspace_fails() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    assert!(matches!(store.update_workspace(99, edit("X", None, &[])), Err(StoreError::NoSuchWorkspace(99))));
 }

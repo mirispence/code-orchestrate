@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde::ser::{SerializeMap, Serializer};
 
 use crate::paths::{PathError, normalize};
-use crate::store::{NewWorkspace, Store, StoreError, Workspace};
+use crate::store::{NewWorkspace, Store, StoreError, Workspace, WorkspaceEdit};
 
 /// Why a Workspace could not be added. Serialises for the UI as
 /// `{ kind, message, ...fields }` with camelCase keys.
@@ -37,6 +37,56 @@ pub fn add_workspace(store: &Store, name: &str, raw_path: &str) -> Result<Worksp
         Err(_) => return Err(AddWorkspaceError::NotFound { path: path.to_string() }),
     }
     Ok(store.add_workspace(NewWorkspace { name: name.to_owned(), path })?)
+}
+
+/// Why a Workspace could not be edited, pinned or removed. Serialises for the
+/// UI as `{ kind, message }`.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum WorkspaceError {
+    #[error("A Workspace needs a name")]
+    EmptyName,
+    #[error("That Workspace no longer exists")]
+    NoSuchWorkspace,
+    #[error("{0}")]
+    Internal(String),
+}
+
+/// Save the edit dialog's name, note and tags (spec §6.2).
+pub fn update_workspace(store: &Store, id: i64, edit: WorkspaceEdit) -> Result<Workspace, WorkspaceError> {
+    Ok(store.update_workspace(id, edit)?)
+}
+
+pub fn set_pinned(store: &Store, id: i64, pinned: bool) -> Result<Workspace, WorkspaceError> {
+    Ok(store.set_pinned(id, pinned)?)
+}
+
+/// Remove a Workspace with its tags (spec §4.3).
+pub fn remove_workspace(store: &Store, id: i64) -> Result<(), WorkspaceError> {
+    Ok(store.remove_workspace(id)?)
+}
+
+impl From<StoreError> for WorkspaceError {
+    fn from(e: StoreError) -> Self {
+        match e {
+            StoreError::EmptyName => WorkspaceError::EmptyName,
+            StoreError::NoSuchWorkspace(_) => WorkspaceError::NoSuchWorkspace,
+            other => WorkspaceError::Internal(other.to_string()),
+        }
+    }
+}
+
+impl Serialize for WorkspaceError {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        let kind = match self {
+            Self::EmptyName => "emptyName",
+            Self::NoSuchWorkspace => "noSuchWorkspace",
+            Self::Internal(_) => "internal",
+        };
+        map.serialize_entry("kind", kind)?;
+        map.serialize_entry("message", &self.to_string())?;
+        map.end()
+    }
 }
 
 impl From<PathError> for AddWorkspaceError {

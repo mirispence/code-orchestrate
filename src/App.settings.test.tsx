@@ -35,6 +35,7 @@ const ws: Workspace = {
   pinned: false,
   note: null,
   createdAt: 1_700_000_000_000,
+  tags: [],
 };
 
 async function openSettings(user: ReturnType<typeof userEvent.setup>) {

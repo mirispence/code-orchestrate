@@ -1,7 +1,9 @@
 //! Adding a Workspace from a raw path (spec §6.2).
 
-use code_orchestrate_lib::store::Store;
-use code_orchestrate_lib::workspaces::{AddWorkspaceError, add_workspace};
+use code_orchestrate_lib::store::{Store, WorkspaceEdit};
+use code_orchestrate_lib::workspaces::{
+    AddWorkspaceError, WorkspaceError, add_workspace, remove_workspace, set_pinned, update_workspace,
+};
 
 #[test]
 fn adds_an_existing_directory_under_its_normalised_path() {
@@ -63,6 +65,41 @@ fn errors_serialise_for_the_ui_with_a_kind_and_message() {
     assert_eq!(json["workspaceId"], 7);
     assert_eq!(json["workspaceName"], "Code");
     assert_eq!(json["message"], "Already a Workspace: Code");
+}
+
+#[test]
+fn edit_errors_serialise_for_the_ui() {
+    let store = Store::open_in_memory().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let ws = add_workspace(&store, "W", dir.path().to_str().unwrap()).unwrap();
+
+    let blank = WorkspaceEdit { name: " ".into(), note: None, tags: vec![] };
+    let err = update_workspace(&store, ws.id, blank).unwrap_err();
+    assert_eq!(err, WorkspaceError::EmptyName);
+    let json = serde_json::to_value(&err).unwrap();
+    assert_eq!((json["kind"].as_str(), json["message"].as_str()), (Some("emptyName"), Some("A Workspace needs a name")));
+
+    let err = remove_workspace(&store, 999).unwrap_err();
+    assert_eq!(serde_json::to_value(&err).unwrap()["kind"], "noSuchWorkspace");
+    assert_eq!(set_pinned(&store, 999, true).unwrap_err(), WorkspaceError::NoSuchWorkspace);
+}
+
+#[test]
+fn edits_pins_and_removes_through_the_workspace_ops() {
+    let store = Store::open_in_memory().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let ws = add_workspace(&store, "W", dir.path().to_str().unwrap()).unwrap();
+
+    let edited = update_workspace(
+        &store,
+        ws.id,
+        WorkspaceEdit { name: "Renamed".into(), note: Some("n".into()), tags: vec!["t".into()] },
+    )
+    .unwrap();
+    assert_eq!((edited.name.as_str(), edited.tags.clone()), ("Renamed", vec!["t".to_string()]));
+    assert!(set_pinned(&store, ws.id, true).unwrap().pinned);
+    remove_workspace(&store, ws.id).unwrap();
+    assert!(store.list_workspaces().unwrap().is_empty());
 }
 
 #[test]

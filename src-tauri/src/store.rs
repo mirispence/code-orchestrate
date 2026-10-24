@@ -6,6 +6,7 @@
 //! former) paths is enforced here by each row's `path_key`, the path's
 //! [`NormalizedPath::comparison_key`].
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -26,6 +27,15 @@ const MIGRATIONS: &[&str] = &[
         note        TEXT,
         created_at  INTEGER NOT NULL
     );",
+    // 2: WorkspaceTag. `tag_key` is the case-folded tag; `position` keeps the typed order.
+    "CREATE TABLE workspace_tag (
+        workspace_id INTEGER NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tag          TEXT    NOT NULL CHECK (trim(tag) <> ''),
+        tag_key      TEXT    NOT NULL,
+        position     INTEGER NOT NULL,
+        PRIMARY KEY (workspace_id, tag_key)
+    );
+    CREATE INDEX workspace_tag_by_key ON workspace_tag (tag_key);",
 ];
 
 /// The schema version this build migrates to.
@@ -37,6 +47,8 @@ pub enum StoreError {
     EmptyName,
     #[error("Already a Workspace: {workspace_name}")]
     PathTaken { workspace_id: i64, workspace_name: String },
+    #[error("No such Workspace: {0}")]
+    NoSuchWorkspace(i64),
     #[error("The database is at schema version {found}, newer than this app's {supported}")]
     NewerSchema { found: i64, supported: i64 },
     #[error("Could not back up the database before migrating: {0}")]
@@ -55,6 +67,16 @@ pub struct Workspace {
     pub note: Option<String>,
     /// Unix epoch milliseconds.
     pub created_at: i64,
+    /// In the order they were added; unique case-insensitively.
+    pub tags: Vec<String>,
+}
+
+/// The user-editable fields of a Workspace, as saved from the edit dialog.
+#[derive(Debug, Clone)]
+pub struct WorkspaceEdit {
+    pub name: String,
+    pub note: Option<String>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +139,27 @@ impl Store {
             "SELECT id, name, path, pinned, note, created_at FROM workspace
              ORDER BY name COLLATE NOCASE, id",
         )?;
-        let rows = stmt.query_map([], workspace_from_row)?;
+        let mut workspaces: Vec<Workspace> =
+            stmt.query_map([], workspace_from_row)?.collect::<Result<_, _>>()?;
+        let mut tags = self.conn.prepare(
+            "SELECT workspace_id, tag FROM workspace_tag ORDER BY workspace_id, position",
+        )?;
+        let index: HashMap<i64, usize> = workspaces.iter().enumerate().map(|(i, w)| (w.id, i)).collect();
+        for row in tags.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
+            let (id, tag) = row?;
+            if let Some(&i) = index.get(&id) {
+                workspaces[i].tags.push(tag);
+            }
+        }
+        Ok(workspaces)
+    }
+
+    /// Every tag some Workspace uses, sorted case-insensitively (for autocomplete).
+    pub fn list_tags(&self) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT MIN(tag) FROM workspace_tag GROUP BY tag_key ORDER BY tag_key",
+        )?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -135,12 +177,79 @@ impl Store {
             "INSERT INTO workspace (name, path, path_key, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![name, new.path.as_str(), key, now_millis()],
         )?;
-        let id = self.conn.last_insert_rowid();
-        Ok(self.conn.query_row(
-            "SELECT id, name, path, pinned, note, created_at FROM workspace WHERE id = ?1",
-            [id],
-            workspace_from_row,
-        )?)
+        self.get_workspace(self.conn.last_insert_rowid())
+    }
+
+    /// Change a Workspace's name, note and tags (spec §6.2). The name is
+    /// trimmed and must be non-empty; a blank note is stored as none.
+    pub fn update_workspace(&self, id: i64, edit: WorkspaceEdit) -> Result<Workspace, StoreError> {
+        let name = edit.name.trim();
+        if name.is_empty() {
+            return Err(StoreError::EmptyName);
+        }
+        let note = edit.note.as_deref().filter(|n| !n.trim().is_empty());
+        let tx = self.conn.unchecked_transaction()?;
+        let changed =
+            tx.execute("UPDATE workspace SET name = ?1, note = ?2 WHERE id = ?3", params![name, note, id])?;
+        if changed == 0 {
+            return Err(StoreError::NoSuchWorkspace(id));
+        }
+        // A tag already in use keeps the spelling it was first typed with.
+        let mut tags = Vec::new();
+        let mut seen = HashSet::new();
+        for raw in &edit.tags {
+            let key = tag_key(raw);
+            if key.is_empty() || !seen.insert(key.clone()) {
+                continue;
+            }
+            let stored: Option<String> = tx
+                .query_row("SELECT tag FROM workspace_tag WHERE tag_key = ?1 LIMIT 1", [&key], |r| r.get(0))
+                .optional()?;
+            tags.push((stored.unwrap_or_else(|| raw.trim().to_owned()), key));
+        }
+        tx.execute("DELETE FROM workspace_tag WHERE workspace_id = ?1", [id])?;
+        for (position, (tag, key)) in tags.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO workspace_tag (workspace_id, tag, tag_key, position) VALUES (?1, ?2, ?3, ?4)",
+                params![id, tag, key, position as i64],
+            )?;
+        }
+        tx.commit()?;
+        self.get_workspace(id)
+    }
+
+    /// Pin or unpin a Workspace (spec §8.1).
+    pub fn set_pinned(&self, id: i64, pinned: bool) -> Result<Workspace, StoreError> {
+        let changed = self.conn.execute("UPDATE workspace SET pinned = ?1 WHERE id = ?2", params![pinned, id])?;
+        if changed == 0 {
+            return Err(StoreError::NoSuchWorkspace(id));
+        }
+        self.get_workspace(id)
+    }
+
+    /// Delete a Workspace's row; its tags go with it (ON DELETE CASCADE).
+    /// Session records, once they exist, stay (spec §4.3).
+    pub fn remove_workspace(&self, id: i64) -> Result<(), StoreError> {
+        if self.conn.execute("DELETE FROM workspace WHERE id = ?1", [id])? == 0 {
+            return Err(StoreError::NoSuchWorkspace(id));
+        }
+        Ok(())
+    }
+
+    fn get_workspace(&self, id: i64) -> Result<Workspace, StoreError> {
+        let mut ws = self
+            .conn
+            .query_row(
+                "SELECT id, name, path, pinned, note, created_at FROM workspace WHERE id = ?1",
+                [id],
+                workspace_from_row,
+            )
+            .optional()?
+            .ok_or(StoreError::NoSuchWorkspace(id))?;
+        let mut stmt =
+            self.conn.prepare("SELECT tag FROM workspace_tag WHERE workspace_id = ?1 ORDER BY position")?;
+        ws.tags = stmt.query_map([id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        Ok(ws)
     }
 
     /// The Workspace that owns a path, by comparison key.
@@ -169,7 +278,13 @@ fn workspace_from_row(row: &Row<'_>) -> rusqlite::Result<Workspace> {
         pinned: row.get(3)?,
         note: row.get(4)?,
         created_at: row.get(5)?,
+        tags: Vec::new(),
     })
+}
+
+/// The case-insensitive identity of a tag.
+fn tag_key(tag: &str) -> String {
+    tag.trim().to_lowercase()
 }
 
 fn now_millis() -> i64 {

@@ -19,6 +19,7 @@ const ws: Workspace = {
   pinned: false,
   note: null,
   createdAt: 1_700_000_000_000,
+  tags: [],
 };
 
 function status(overrides: Partial<AgentStatus> = {}): AgentStatus {
@@ -32,7 +33,7 @@ function status(overrides: Partial<AgentStatus> = {}): AgentStatus {
 }
 
 function renderDetail(onOpenSettings = vi.fn()) {
-  render(<WorkspaceDetail workspace={ws} onOpenSettings={onOpenSettings} />);
+  render(<WorkspaceDetail workspace={ws} onEdit={vi.fn()} onTogglePin={vi.fn()} onOpenSettings={onOpenSettings} />);
   return { onOpenSettings };
 }
 

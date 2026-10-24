@@ -10,8 +10,8 @@ use crate::settings::{SettingsError, SettingsFile, Snapshot, Theme};
 use crate::agents::claude_code::ClaudeCode;
 use crate::agents::{self, AgentStatus, LaunchMode};
 use crate::launch::{self, LaunchError, OsSpawner, Terminal};
-use crate::store::{Store, Workspace};
-use crate::workspaces::{self, AddWorkspaceError};
+use crate::store::{Store, Workspace, WorkspaceEdit};
+use crate::workspaces::{self, AddWorkspaceError, WorkspaceError};
 
 /// The app's single store, shared across commands and worker threads.
 pub type AppStore = Arc<Mutex<Store>>;
@@ -55,6 +55,34 @@ where
 #[tauri::command]
 pub async fn list_workspaces(store: State<'_, AppStore>) -> Result<Vec<Workspace>, InternalError> {
     with_store(&store, InternalError::new, |s| s.list_workspaces().map_err(InternalError::new)).await
+}
+
+#[tauri::command]
+pub async fn update_workspace(
+    store: State<'_, AppStore>,
+    id: i64,
+    name: String,
+    note: Option<String>,
+    tags: Vec<String>,
+) -> Result<Workspace, WorkspaceError> {
+    with_store(&store, WorkspaceError::Internal, move |s| {
+        workspaces::update_workspace(s, id, WorkspaceEdit { name, note, tags })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_workspace_pinned(
+    store: State<'_, AppStore>,
+    id: i64,
+    pinned: bool,
+) -> Result<Workspace, WorkspaceError> {
+    with_store(&store, WorkspaceError::Internal, move |s| workspaces::set_pinned(s, id, pinned)).await
+}
+
+#[tauri::command]
+pub async fn remove_workspace(store: State<'_, AppStore>, id: i64) -> Result<(), WorkspaceError> {
+    with_store(&store, WorkspaceError::Internal, move |s| workspaces::remove_workspace(s, id)).await
 }
 
 #[tauri::command]
