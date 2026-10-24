@@ -48,6 +48,8 @@ pub enum WorkspaceError {
     #[error("That Workspace no longer exists")]
     NoSuchWorkspace,
     #[error("{0}")]
+    InvalidPath(String),
+    #[error("{0}")]
     Internal(String),
 }
 
@@ -60,7 +62,13 @@ pub fn set_pinned(store: &Store, id: i64, pinned: bool) -> Result<Workspace, Wor
     Ok(store.set_pinned(id, pinned)?)
 }
 
-/// Remove a Workspace with its tags (spec §4.3).
+/// Dismiss a Suggestion's path so it never comes back (spec §6.6).
+pub fn dismiss_path(store: &Store, raw_path: &str) -> Result<(), WorkspaceError> {
+    let path = normalize(raw_path).map_err(|e| WorkspaceError::InvalidPath(e.to_string()))?;
+    Ok(store.dismiss_path(&path)?)
+}
+
+/// Remove a Workspace with its tags, dismissing its path (spec §4.3).
 pub fn remove_workspace(store: &Store, id: i64) -> Result<(), WorkspaceError> {
     Ok(store.remove_workspace(id)?)
 }
@@ -81,6 +89,7 @@ impl Serialize for WorkspaceError {
         let kind = match self {
             Self::EmptyName => "emptyName",
             Self::NoSuchWorkspace => "noSuchWorkspace",
+            Self::InvalidPath(_) => "invalidPath",
             Self::Internal(_) => "internal",
         };
         map.serialize_entry("kind", kind)?;
