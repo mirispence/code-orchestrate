@@ -1,4 +1,4 @@
-import { Inbox, Plus, Settings, Star } from "lucide-react";
+import { Inbox, Plus, RefreshCw, Settings, Star } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,11 @@ type SidebarProps = {
   onOpenSuggestions: () => void;
   onOpenSettings: () => void;
   settingsOpen: boolean;
+  suggestionCount: number;
+  suggestionsOpen: boolean;
+  /** A transcript scan is running (spinner on the refresh button). */
+  scanning: boolean;
+  onRefresh: () => void;
 };
 
 export function Sidebar({
@@ -26,6 +31,10 @@ export function Sidebar({
   onOpenSuggestions,
   onOpenSettings,
   settingsOpen,
+  suggestionCount,
+  suggestionsOpen,
+  scanning,
+  onRefresh,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
   const [chosenTagKeys, setChosenTagKeys] = useState<string[]>([]);
@@ -81,9 +90,20 @@ export function Sidebar({
           })}
         </div>
       )}
-      <Button variant="ghost" className="justify-start" onClick={onOpenSuggestions}>
+      <Button
+        variant="ghost"
+        className={cn("justify-start", suggestionsOpen && "bg-sidebar-accent")}
+        aria-pressed={suggestionsOpen}
+        aria-label={suggestionCount > 0 ? `Suggestions (${suggestionCount})` : "Suggestions"}
+        onClick={onOpenSuggestions}
+      >
         <Inbox />
         Suggestions
+        {suggestionCount > 0 && (
+          <span className="ml-auto rounded-full bg-brand px-1.5 text-xs font-medium text-brand-foreground">
+            {suggestionCount}
+          </span>
+        )}
       </Button>
       {workspaces.length > 0 && shown.length === 0 && (
         <p className="px-2 text-sm text-muted-foreground">No matching Workspaces</p>
@@ -95,6 +115,16 @@ export function Sidebar({
         <WorkspaceList label="All" workspaces={unpinned} selectedId={selectedId} onSelect={onSelectWorkspace} />
       )}
       <div className="mt-auto flex items-center justify-end gap-1 pt-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Refresh"
+          aria-busy={scanning}
+          title={scanning ? "Scanning Sessions…" : "Scan for new Sessions"}
+          onClick={onRefresh}
+        >
+          <RefreshCw className={cn(scanning && "animate-spin")} />
+        </Button>
         <Button
           size="icon"
           variant="ghost"

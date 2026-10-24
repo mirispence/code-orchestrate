@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
+use crate::agents::{SessionSummary, SourceKey};
 use crate::paths::NormalizedPath;
 
 /// Ordered schema migrations. Migration `i` takes the DB from version `i` to `i + 1`.
@@ -36,6 +37,35 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (workspace_id, tag_key)
     );
     CREATE INDEX workspace_tag_by_key ON workspace_tag (tag_key);",
+    // 3: Session, SourceFile and DismissedPath (spec §4.2). Session records are
+    // durable: a scan inserts or updates them and never deletes one. The stats
+    // columns stay null until a scan fills them.
+    "CREATE TABLE session (
+        agent_id            TEXT    NOT NULL,
+        session_id          TEXT    NOT NULL,
+        first_cwd           TEXT    NOT NULL,
+        title               TEXT,
+        started_at          INTEGER,
+        last_activity_at    INTEGER,
+        active_time_ms      INTEGER,
+        tokens_input        INTEGER,
+        tokens_output       INTEGER,
+        tokens_cache_write  INTEGER,
+        tokens_cache_read   INTEGER,
+        source_path         TEXT    NOT NULL,
+        PRIMARY KEY (agent_id, session_id)
+    );
+    CREATE TABLE source_file (
+        path      TEXT    PRIMARY KEY,
+        agent_id  TEXT    NOT NULL,
+        mtime     INTEGER NOT NULL,
+        size      INTEGER NOT NULL
+    );
+    CREATE TABLE dismissed_path (
+        path          TEXT    NOT NULL,
+        path_key      TEXT    PRIMARY KEY,
+        dismissed_at  INTEGER NOT NULL
+    );",
 ];
 
 /// The schema version this build migrates to.
@@ -83,6 +113,25 @@ pub struct WorkspaceEdit {
 pub struct NewWorkspace {
     pub name: String,
     pub path: NormalizedPath,
+}
+
+/// A stored Session (spec §4.2). Times are Unix epoch milliseconds, UTC.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    pub agent_id: String,
+    pub session_id: String,
+    pub first_cwd: NormalizedPath,
+    pub started_at: Option<i64>,
+    pub last_activity_at: Option<i64>,
+    pub source_path: String,
+}
+
+/// What one scanned transcript yielded: its source key and, if it holds a
+/// Session yet, the parsed summary.
+#[derive(Debug, Clone)]
+pub struct ScannedSource {
+    pub key: SourceKey,
+    pub session: Option<SessionSummary>,
 }
 
 pub struct Store {
@@ -173,11 +222,16 @@ impl Store {
         if let Some((workspace_id, workspace_name)) = self.path_owner(&key)? {
             return Err(StoreError::PathTaken { workspace_id, workspace_name });
         }
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
             "INSERT INTO workspace (name, path, path_key, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![name, new.path.as_str(), key, now_millis()],
         )?;
-        self.get_workspace(self.conn.last_insert_rowid())
+        let id = tx.last_insert_rowid();
+        // Adding a Workspace at a dismissed path restores it (spec §6.6).
+        tx.execute("DELETE FROM dismissed_path WHERE path_key = ?1", [&key])?;
+        tx.commit()?;
+        self.get_workspace(id)
     }
 
     /// Change a Workspace's name, note and tags (spec §6.2). The name is
@@ -227,12 +281,84 @@ impl Store {
         self.get_workspace(id)
     }
 
-    /// Delete a Workspace's row; its tags go with it (ON DELETE CASCADE).
-    /// Session records, once they exist, stay (spec §4.3).
+    /// Delete a Workspace's row; its tags go with it (ON DELETE CASCADE). Its
+    /// Session records stay, and its path is dismissed so it does not come
+    /// back as a Suggestion (spec §4.3).
     pub fn remove_workspace(&self, id: i64) -> Result<(), StoreError> {
-        if self.conn.execute("DELETE FROM workspace WHERE id = ?1", [id])? == 0 {
-            return Err(StoreError::NoSuchWorkspace(id));
+        let ws = self.get_workspace(id)?;
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM workspace WHERE id = ?1", [id])?;
+        insert_dismissed(&tx, &ws.path)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Hide a path from Suggestions permanently (spec §6.6). Dismissing an
+    /// already dismissed path keeps its original time.
+    pub fn dismiss_path(&self, path: &NormalizedPath) -> Result<(), StoreError> {
+        insert_dismissed(&self.conn, path)
+    }
+
+    /// Dismissed paths, oldest dismissal first.
+    pub fn list_dismissed_paths(&self) -> Result<Vec<NormalizedPath>, StoreError> {
+        let mut stmt = self.conn.prepare("SELECT path FROM dismissed_path ORDER BY dismissed_at, path")?;
+        let rows = stmt.query_map([], |r| Ok(NormalizedPath::from_stored(r.get(0)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Every stored Session, matched to a Workspace or not.
+    pub fn list_sessions(&self) -> Result<Vec<Session>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT agent_id, session_id, first_cwd, started_at, last_activity_at, source_path
+             FROM session ORDER BY agent_id, session_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Session {
+                agent_id: r.get(0)?,
+                session_id: r.get(1)?,
+                first_cwd: NormalizedPath::from_stored(r.get(2)?),
+                started_at: r.get(3)?,
+                last_activity_at: r.get(4)?,
+                source_path: r.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The source key of every transcript an Agent's scans have parsed, by path.
+    pub fn source_keys(&self, agent_id: &str) -> Result<HashMap<String, (i64, u64)>, StoreError> {
+        let mut stmt = self.conn.prepare("SELECT path, mtime, size FROM source_file WHERE agent_id = ?1")?;
+        let rows = stmt.query_map([agent_id], |r| {
+            Ok((r.get::<_, String>(0)?, (r.get::<_, i64>(1)?, r.get::<_, i64>(2)? as u64)))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Save what a scan parsed, in one transaction: upsert each Session and
+    /// record each file's source key. Nothing is ever deleted (spec §4.3).
+    pub fn record_scan(&self, agent_id: &str, scanned: &[ScannedSource]) -> Result<(), StoreError> {
+        let tx = self.conn.unchecked_transaction()?;
+        for source in scanned {
+            let path = source.key.path.to_string_lossy();
+            if let Some(s) = &source.session {
+                tx.execute(
+                    "INSERT INTO session (agent_id, session_id, first_cwd, started_at, last_activity_at, source_path)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT (agent_id, session_id) DO UPDATE SET
+                        first_cwd = excluded.first_cwd,
+                        started_at = excluded.started_at,
+                        last_activity_at = excluded.last_activity_at,
+                        source_path = excluded.source_path",
+                    params![agent_id, s.session_id, s.first_cwd.as_str(), s.started_at, s.last_activity_at, path],
+                )?;
+            }
+            tx.execute(
+                "INSERT INTO source_file (path, agent_id, mtime, size) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (path) DO UPDATE SET agent_id = excluded.agent_id, mtime = excluded.mtime, size = excluded.size",
+                params![path, agent_id, source.key.mtime, source.key.size as i64],
+            )?;
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -261,6 +387,15 @@ impl Store {
             })
             .optional()?)
     }
+}
+
+fn insert_dismissed(conn: &Connection, path: &NormalizedPath) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO dismissed_path (path, path_key, dismissed_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT (path_key) DO NOTHING",
+        params![path.as_str(), path.comparison_key(), now_millis()],
+    )?;
+    Ok(())
 }
 
 /// `code-orchestrate.db` -> `code-orchestrate.db.bak`.

@@ -21,6 +21,11 @@ vi.mock("@/lib/api", async (importOriginal) => {
       resetSettings: vi.fn(),
       agentStatus: vi.fn(),
       launchSession: vi.fn(),
+      listSuggestions: vi.fn(),
+      dismissPath: vi.fn(),
+      startScan: vi.fn(),
+      scanRunning: vi.fn(),
+      onScanState: vi.fn(),
     },
   };
 });
@@ -52,6 +57,9 @@ async function clickAddWorkspace(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([]);
+  mocked.listSuggestions.mockResolvedValue([]);
+  mocked.scanRunning.mockResolvedValue(false);
+  mocked.onScanState.mockResolvedValue(() => {});
   mocked.getSettings.mockResolvedValue({
     ok: true,
     value: {
@@ -208,8 +216,11 @@ describe("Add Workspace", () => {
 
 describe("Loading Workspaces", () => {
   it("shows a load failure with a retry, not an empty state", async () => {
-    mocked.listWorkspaces.mockRejectedValueOnce(new Error("disk I/O error"));
-    mocked.listWorkspaces.mockResolvedValueOnce([workspace({ name: "alpha" })]);
+    let failing = true;
+    mocked.listWorkspaces.mockImplementation(async () => {
+      if (failing) throw new Error("disk I/O error");
+      return [workspace({ name: "alpha" })];
+    });
     const user = userEvent.setup();
     render(<App />);
 
@@ -217,6 +228,7 @@ describe("Loading Workspaces", () => {
     expect(alert).toHaveTextContent("disk I/O error");
     expect(screen.queryByRole("heading", { name: /no workspaces yet/i })).not.toBeInTheDocument();
 
+    failing = false;
     await user.click(within(alert).getByRole("button", { name: "Retry" }));
 
     expect(await within(allList()).findByText("alpha")).toBeInTheDocument();

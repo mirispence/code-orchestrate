@@ -4,8 +4,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::attribution::{self, Suggestion};
+use crate::scan::{self, Scanner};
 use crate::settings::{SettingsError, SettingsFile, Snapshot, Theme};
 use crate::agents::claude_code::ClaudeCode;
 use crate::agents::{self, AgentStatus, LaunchMode};
@@ -203,6 +205,47 @@ pub async fn launch_session(
         launch::launch_session(s, &agent(), terminal, &OsSpawner, workspace_id, &mode)
     })
     .await
+}
+
+/// The event the UI listens to for scan progress; the payload is `true` when
+/// a scan starts and `false` when it (and any coalesced follow-up) finishes.
+pub const SCAN_STATE_EVENT: &str = "scan-state";
+
+/// The app's background scanner over the Claude Code transcripts.
+pub fn scanner(app: AppHandle, store: AppStore) -> Scanner {
+    Scanner::new(
+        move || {
+            if let Err(e) = scan::run(&store, &agent()) {
+                eprintln!("transcript scan failed: {e}");
+            }
+        },
+        move |running| {
+            let _ = app.emit(SCAN_STATE_EVENT, running);
+        },
+    )
+}
+
+/// Start a scan (the sidebar refresh button). Returns at once; progress
+/// arrives as [`SCAN_STATE_EVENT`].
+#[tauri::command]
+pub fn start_scan(scanner: State<'_, Scanner>) {
+    scanner.trigger();
+}
+
+/// Whether a scan is running now (for a UI that mounts mid-scan).
+#[tauri::command]
+pub fn scan_running(scanner: State<'_, Scanner>) -> bool {
+    scanner.is_running()
+}
+
+#[tauri::command]
+pub async fn list_suggestions(store: State<'_, AppStore>) -> Result<Vec<Suggestion>, InternalError> {
+    with_store(&store, InternalError::new, |s| attribution::suggestions(s).map_err(InternalError::new)).await
+}
+
+#[tauri::command]
+pub async fn dismiss_path(store: State<'_, AppStore>, path: String) -> Result<(), WorkspaceError> {
+    with_store(&store, WorkspaceError::Internal, move |s| workspaces::dismiss_path(s, &path)).await
 }
 
 /// Settings › Terminal › Test: run `claude --version` in the home directory

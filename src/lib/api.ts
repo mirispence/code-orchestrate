@@ -2,6 +2,7 @@
 // commands, plus the native folder picker. Components import `api`; tests mock
 // this module.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
 export type Workspace = {
@@ -23,7 +24,19 @@ export type WorkspaceEdit = { name: string; note: string; tags: string[] };
 export type WorkspaceError =
   | { kind: "emptyName"; message: string }
   | { kind: "noSuchWorkspace"; message: string }
+  | { kind: "invalidPath"; message: string }
   | CommandError;
+
+/** A directory with Sessions that no Workspace covers (spec §5.5). */
+export type Suggestion = {
+  /** The Sessions' normalised first `cwd`. */
+  path: string;
+  sessionCount: number;
+  /** Newest last activity, Unix epoch milliseconds. */
+  lastSeen: number | null;
+  /** The directory is gone; it can only be dismissed. */
+  missing: boolean;
+};
 
 /** Every command error carries a `kind` and a human-readable `message`. */
 export type CommandError = { kind: "internal"; message: string };
@@ -160,6 +173,34 @@ export const api = {
   /** Open a terminal running the Agent in the Workspace's directory. */
   launchSession(workspaceId: number, mode: LaunchMode): Promise<Result<void, LaunchError>> {
     return call("launch_session", { workspaceId, mode });
+  },
+
+  /** Suggestions computed from the stored Sessions. Throws on an internal error. */
+  async listSuggestions(): Promise<Suggestion[]> {
+    const result = await call<Suggestion[], CommandError>("list_suggestions");
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  },
+
+  /** Hide a Suggestion's path permanently (spec §6.6). */
+  dismissPath(path: string): Promise<Result<null, WorkspaceError>> {
+    return call("dismiss_path", { path });
+  },
+
+  /** Start a background transcript scan; progress arrives through `onScanState`. */
+  async startScan(): Promise<void> {
+    await call("start_scan");
+  },
+
+  /** Whether a scan is running now. */
+  async scanRunning(): Promise<boolean> {
+    const result = await call<boolean, CommandError>("scan_running");
+    return result.ok && result.value;
+  },
+
+  /** Calls `listener(true)` when a scan starts and `(false)` when it finishes. Resolves to an unsubscribe. */
+  onScanState(listener: (running: boolean) => void): Promise<() => void> {
+    return listen<boolean>("scan-state", (event) => listener(event.payload));
   },
 
   /** Settings › Terminal › Test: run `claude --version` in the home directory through the template. */

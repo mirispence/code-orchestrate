@@ -2,9 +2,11 @@
 //! webview reaches the system only through the commands registered here.
 
 pub mod agents;
+pub mod attribution;
 pub mod commands;
 pub mod launch;
 pub mod paths;
+pub mod scan;
 pub mod settings;
 pub mod store;
 pub mod workspaces;
@@ -29,8 +31,12 @@ pub fn run() {
             let settings = settings::SettingsFile::new(data_dir.join(settings::SETTINGS_FILE_NAME));
             commands::apply_settings(app.handle(), &settings.load());
             app.manage::<commands::AppSettings>(Arc::new(Mutex::new(settings)));
-            let store = store::Store::open(&data_dir.join(DB_FILE_NAME))?;
-            app.manage::<commands::AppStore>(Arc::new(Mutex::new(store)));
+            let store: commands::AppStore = Arc::new(Mutex::new(store::Store::open(&data_dir.join(DB_FILE_NAME))?));
+            app.manage::<commands::AppStore>(Arc::clone(&store));
+            // Scan transcripts in the background on startup (spec §5.1).
+            let scanner = commands::scanner(app.handle().clone(), store);
+            scanner.trigger();
+            app.manage(scanner);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -44,6 +50,10 @@ pub fn run() {
             commands::reset_settings,
             commands::agent_status,
             commands::launch_session,
+            commands::start_scan,
+            commands::scan_running,
+            commands::list_suggestions,
+            commands::dismiss_path,
             commands::test_terminal,
         ])
         .run(tauri::generate_context!())
