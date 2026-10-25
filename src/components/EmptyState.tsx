@@ -9,7 +9,7 @@ type EmptyStateProps = {
 export function EmptyState({ onAddWorkspace, onOpenSuggestions }: EmptyStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
-      <h2 className="text-lg font-semibold">No Workspaces yet</h2>
+      <h2 className="text-2xl font-semibold tracking-tight">No Workspaces yet</h2>
       <p className="max-w-sm text-muted-foreground">
         Add a project folder as a Workspace, or check Suggestions for folders where you have
         already run Sessions.

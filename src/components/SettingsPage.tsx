@@ -47,13 +47,13 @@ export function SettingsPage({ settings, onClose, onRestored }: SettingsPageProp
   const preset = snapshot?.values["terminal.preset"];
 
   return (
-    <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
-      <h2 className="text-xl font-semibold">Settings</h2>
+    <div className="flex max-w-3xl flex-col gap-7 px-9 pt-7 pb-12">
+      <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
 
       {snapshot?.fileError && (
         <div
           role="alert"
-          className="flex flex-col gap-2 rounded-md border border-destructive/50 p-3 text-sm text-destructive"
+          className="flex flex-col gap-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
         >
           <p>
             settings.json could not be read, so the defaults are in use. It will not be changed until
@@ -68,7 +68,7 @@ export function SettingsPage({ settings, onClose, onRestored }: SettingsPageProp
         </div>
       )}
       {error !== null && (
-        <div role="alert" className="rounded-md border border-destructive/50 p-3 text-sm text-destructive">
+        <div role="alert" className="rounded-lg border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Could not save settings: {error}
         </div>
       )}
@@ -143,7 +143,7 @@ export function SettingsSection({ title, children }: { title: string; children: 
   const id = useId();
   return (
     <section aria-labelledby={id} className="flex flex-col gap-4">
-      <h3 id={id} className="border-b pb-1 text-sm font-semibold text-muted-foreground uppercase">
+      <h3 id={id} className="border-b pb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
         {title}
       </h3>
       {children}
@@ -195,7 +195,7 @@ export function ChoiceSetting<V extends string>({
   const labelId = useId();
   return (
     <SettingRow label={label} labelId={labelId} warning={warning}>
-      <div role="radiogroup" aria-labelledby={labelId} className="inline-flex rounded-md border p-0.5">
+      <div role="radiogroup" aria-labelledby={labelId} className="inline-flex rounded-lg bg-muted p-0.5">
         {options.map((option) => {
           const checked = option.value === value;
           return (
@@ -209,8 +209,10 @@ export function ChoiceSetting<V extends string>({
                 if (!checked) onChange(option.value);
               }}
               className={cn(
-                "rounded-sm px-3 py-1 text-sm disabled:opacity-50",
-                checked ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent/60",
+                "rounded-md px-3 py-1 text-sm disabled:opacity-50",
+                checked
+                  ? "bg-background font-medium text-foreground shadow-sm dark:bg-card"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {option.label}

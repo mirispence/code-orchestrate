@@ -58,47 +58,59 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-3 border-r bg-sidebar p-3 text-sidebar-foreground">
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-base font-semibold">Code Orchestrate</h1>
-        <Button size="sm" variant="outline" onClick={onAddWorkspace}>
-          <Plus />
-          Add Workspace
-        </Button>
-      </div>
-      {workspaces.length > 0 && (
-        <Input
-          type="search"
-          aria-label="Search Workspaces"
-          placeholder="Search Workspaces…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      )}
-      {chips.length > 0 && (
-        <div role="group" aria-label="Filter by tag" className="flex flex-wrap gap-1">
-          {chips.map((tag) => {
-            const on = activeTagKeys.includes(tagKey(tag));
-            return (
-              <button
-                key={tagKey(tag)}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggleTag(tagKey(tag))}
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-xs",
-                  on ? "bg-brand text-brand-foreground" : "bg-muted text-muted-foreground hover:bg-sidebar-accent",
-                )}
-              >
-                {tag}
-              </button>
-            );
-          })}
+    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="flex flex-col gap-2.5 p-3.5 pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-sm font-semibold">Code Orchestrate</h1>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 hover:bg-sidebar-accent"
+            aria-label="Add Workspace"
+            title="Add Workspace"
+            onClick={onAddWorkspace}
+          >
+            <Plus />
+          </Button>
         </div>
-      )}
+        {workspaces.length > 0 && (
+          <Input
+            type="search"
+            aria-label="Search Workspaces"
+            placeholder="Search Workspaces…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="bg-background dark:bg-background"
+          />
+        )}
+        {chips.length > 0 && (
+          <div role="group" aria-label="Filter by tag" className="flex flex-wrap gap-1">
+            {chips.map((tag) => {
+              const on = activeTagKeys.includes(tagKey(tag));
+              return (
+                <button
+                  key={tagKey(tag)}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleTag(tagKey(tag))}
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[11px] leading-4",
+                    on ? "bg-primary text-primary-foreground" : "bg-sidebar-accent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
       <Button
         variant="ghost"
-        className={cn("justify-start", suggestionsOpen && "bg-sidebar-accent")}
+        className={cn(
+          "mx-2 justify-start rounded-lg border border-dashed px-2.5 font-normal hover:bg-sidebar-accent",
+          suggestionsOpen && "border-solid bg-card shadow-sm hover:bg-card",
+        )}
         aria-pressed={suggestionsOpen}
         aria-label={suggestionCount > 0 ? `Suggestions (${suggestionCount})` : "Suggestions"}
         onClick={onOpenSuggestions}
@@ -106,26 +118,29 @@ export function Sidebar({
         <Inbox />
         Suggestions
         {suggestionCount > 0 && (
-          <span className="ml-auto rounded-full bg-brand px-1.5 text-xs font-medium text-brand-foreground">
+          <span className="ml-auto rounded-full bg-brand px-1.75 text-[11px] leading-4 font-semibold text-brand-foreground">
             {suggestionCount}
           </span>
         )}
       </Button>
-      {workspaces.length > 0 && shown.length === 0 && (
-        <p className="px-2 text-sm text-muted-foreground">No matching Workspaces</p>
-      )}
-      {pinned.length > 0 && (
-        <WorkspaceList label="Pinned" workspaces={pinned} stats={stats} selectedId={selectedId} onSelect={onSelectWorkspace} />
-      )}
-      {unpinned.length > 0 && (
-        <WorkspaceList label="All" workspaces={unpinned} stats={stats} selectedId={selectedId} onSelect={onSelectWorkspace} />
-      )}
-      <div className="mt-auto flex items-center justify-end gap-1 pt-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {workspaces.length > 0 && shown.length === 0 && (
+          <p className="px-2 py-2.5 text-sm text-muted-foreground">No matching Workspaces</p>
+        )}
+        {pinned.length > 0 && (
+          <WorkspaceList label="Pinned" workspaces={pinned} stats={stats} selectedId={selectedId} onSelect={onSelectWorkspace} />
+        )}
+        {unpinned.length > 0 && (
+          <WorkspaceList label="All" workspaces={unpinned} stats={stats} selectedId={selectedId} onSelect={onSelectWorkspace} />
+        )}
+      </div>
+      <div className="flex items-center justify-end gap-1 border-t border-sidebar-border p-2">
         <Button
           size="icon"
           variant="ghost"
           aria-label="Refresh"
           aria-busy={scanning}
+          className="hover:bg-sidebar-accent"
           title={scanning ? "Scanning Sessions…" : "Scan for new Sessions"}
           onClick={onRefresh}
         >
@@ -137,6 +152,7 @@ export function Sidebar({
           aria-label="Settings"
           aria-pressed={settingsOpen}
           title="Settings"
+          className={cn("hover:bg-sidebar-accent", settingsOpen && "bg-sidebar-accent")}
           onClick={onOpenSettings}
         >
           <Settings />
@@ -161,11 +177,11 @@ function WorkspaceList({
 }) {
   const headingId = `workspace-list-${label.toLowerCase()}`;
   return (
-    <section className="flex min-h-0 flex-col gap-1">
-      <h2 id={headingId} className="px-2 text-xs font-medium text-muted-foreground uppercase">
+    <section className="flex flex-col">
+      <h2 id={headingId} className="px-2 pt-2.5 pb-1 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
         {label}
       </h2>
-      <ul aria-labelledby={headingId} className="flex flex-col gap-0.5 overflow-y-auto">
+      <ul aria-labelledby={headingId} className="flex flex-col gap-0.5">
         {workspaces.map((ws) => (
           <li key={ws.id}>
             <WorkspaceRow
@@ -212,16 +228,16 @@ function WorkspaceRow({
       title={ws.missing ? `Folder not found: ${ws.path}` : ws.path}
       onClick={onSelect}
       className={cn(
-        "flex w-full flex-col rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent",
-        selected && "bg-sidebar-accent font-medium",
+        "flex w-full flex-col rounded-lg px-2.5 py-2 text-left text-sm hover:bg-sidebar-accent",
+        selected && "bg-card shadow-sm hover:bg-card",
         ws.missing && "text-muted-foreground",
       )}
     >
       <span className="flex w-full items-center gap-1.5">
-        <span id={nameId} className="truncate">
+        {ws.pinned && <Star aria-label="Pinned" className="size-3.5 shrink-0 fill-brand text-brand" />}
+        <span id={nameId} className="truncate font-medium">
           {ws.name}
         </span>
-        {ws.pinned && <Star aria-label="Pinned" className="size-3.5 shrink-0 fill-brand text-brand" />}
         {ws.missing && <MissingBadge className="ml-auto" />}
       </span>
       <span id={statsId} className="truncate text-xs font-normal text-muted-foreground">

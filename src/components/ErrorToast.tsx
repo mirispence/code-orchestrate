@@ -14,7 +14,7 @@ export function ErrorToast({ message, actionLabel, onAction, onDismiss }: ErrorT
   return (
     <div
       role="alert"
-      className="fixed right-4 bottom-4 z-50 flex max-w-md items-start gap-3 rounded-md border border-destructive/50 bg-background p-3 text-sm shadow-lg"
+      className="fixed right-4 bottom-4 z-50 flex max-w-md items-start gap-3 rounded-lg border border-destructive/50 bg-popover p-3 text-sm text-popover-foreground shadow-lg"
     >
       <p className="min-w-0 flex-1 break-words text-destructive">{message}</p>
       <Button size="sm" variant="outline" onClick={onAction}>

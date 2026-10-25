@@ -117,11 +117,11 @@ export function WorkspaceDetail({
   const describedBy = hint !== null ? hintId : undefined;
 
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex max-w-5xl flex-col gap-5 px-9 pt-7 pb-12">
       <WorkspaceHeader workspace={workspace} onEdit={onEdit} onTogglePin={onTogglePin} />
 
       {workspace.missing && (
-        <div className="flex items-center justify-between gap-4 rounded-md border border-brand/40 bg-brand/10 p-3 text-sm">
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-brand/40 bg-brand-soft p-3 text-sm">
           <p className="min-w-0 break-all">
             Folder not found: <span className="font-mono">{workspace.path}</span>. Its stats and Sessions are kept.
           </p>
@@ -132,7 +132,7 @@ export function WorkspaceDetail({
       )}
 
       {/* A disabled button gets no hover events, so the tooltip sits on a wrapper. */}
-      <div className="flex gap-2" title={hint ?? undefined}>
+      <div className="flex gap-2 pb-1" title={hint ?? undefined}>
         <Button
           className="bg-brand text-brand-foreground hover:bg-brand/90"
           disabled={!canLaunch}
@@ -200,8 +200,12 @@ function WorkspaceHeader({
     <header className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-xl font-semibold break-words">{workspace.name}</h2>
-          <p className="font-mono text-sm break-all text-muted-foreground">{workspace.path}</p>
+          <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight break-words">
+            {/* Decorative: the Pin/Unpin button carries the state, so the heading is just the name. */}
+            {workspace.pinned && <Star aria-hidden className="size-5 shrink-0 fill-brand text-brand" />}
+            <span className="min-w-0">{workspace.name}</span>
+          </h2>
+          <p className="font-mono text-xs break-all text-muted-foreground">{workspace.path}</p>
         </div>
         <div className="flex shrink-0 gap-1">
           <Button size="sm" variant="ghost" onClick={onTogglePin}>
@@ -214,7 +218,7 @@ function WorkspaceHeader({
         </div>
       </div>
       <TagList tags={workspace.tags} />
-      {workspace.note && <p className="text-sm whitespace-pre-wrap">{workspace.note}</p>}
+      {workspace.note && <p className="mt-1 text-sm whitespace-pre-wrap">{workspace.note}</p>}
     </header>
   );
 }

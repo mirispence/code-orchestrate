@@ -15,9 +15,9 @@ type SuggestionsInboxProps = {
 /** Directories with Sessions that no Workspace covers (spec §8.3). */
 export function SuggestionsInbox({ suggestions, onAdd, onDismiss }: SuggestionsInboxProps) {
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div>
-        <h2 className="text-lg font-semibold">Suggestions</h2>
+    <div className="flex max-w-5xl flex-col gap-4 px-9 pt-7 pb-12">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-2xl font-semibold tracking-tight">Suggestions</h2>
         <p className="text-sm text-muted-foreground">
           Folders where Sessions ran that are not Workspaces yet.
         </p>
@@ -25,7 +25,7 @@ export function SuggestionsInbox({ suggestions, onAdd, onDismiss }: SuggestionsI
       {suggestions.length === 0 ? (
         <p className="text-sm text-muted-foreground">No Suggestions right now.</p>
       ) : (
-        <ul className="flex flex-col divide-y rounded-md border">
+        <ul className="flex flex-col gap-2.5">
           {suggestions.map((s) => (
             // Keyed by path so each row keeps its own typed name.
             <SuggestionRow key={s.path} suggestion={s} onAdd={onAdd} onDismiss={onDismiss} />
@@ -54,44 +54,52 @@ function SuggestionRow({
   }
 
   return (
-    <li aria-label={path} className="flex flex-col gap-2 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium break-all">{path}</span>
-        {missing && (
-          <MissingBadge />
-        )}
+    <li aria-label={path} className="flex flex-col gap-2 rounded-lg border bg-card p-3.5 text-card-foreground">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs break-all">{path}</span>
+            {missing && <MissingBadge />}
+          </div>
+          <div className="flex gap-1.5 text-xs text-muted-foreground">
+            <span>{sessionCount === 1 ? "1 Session" : `${sessionCount} Sessions`}</span>
+            {lastSeen !== null && (
+              <>
+                <span aria-hidden>·</span>
+                <span>Last seen {new Date(lastSeen).toLocaleString()}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <form
+          className="flex shrink-0 items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void act(() => onAdd(name.trim(), path));
+          }}
+        >
+          {!missing && (
+            <>
+              <Input
+                aria-label="Name"
+                value={name}
+                placeholder="Name"
+                className="h-8 w-44"
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setError(null);
+                }}
+              />
+              <Button type="submit" size="sm" disabled={busy || name.trim() === ""}>
+                Add
+              </Button>
+            </>
+          )}
+          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => onDismiss(path))}>
+            Dismiss
+          </Button>
+        </form>
       </div>
-      <div className="flex gap-3 text-xs text-muted-foreground">
-        <span>{sessionCount === 1 ? "1 Session" : `${sessionCount} Sessions`}</span>
-        {lastSeen !== null && <span>Last seen {new Date(lastSeen).toLocaleString()}</span>}
-      </div>
-      <form
-        className="flex items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void act(() => onAdd(name.trim(), path));
-        }}
-      >
-        {!missing && (
-          <>
-            <Input
-              aria-label="Name"
-              value={name}
-              className="h-8 max-w-64"
-              onChange={(e) => {
-                setName(e.target.value);
-                setError(null);
-              }}
-            />
-            <Button type="submit" size="sm" disabled={busy || name.trim() === ""}>
-              Add
-            </Button>
-          </>
-        )}
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void act(() => onDismiss(path))}>
-          Dismiss
-        </Button>
-      </form>
       {error !== null && (
         <p role="alert" className="text-sm text-destructive">
           {error}
