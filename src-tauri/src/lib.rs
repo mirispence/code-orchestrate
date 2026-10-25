@@ -47,6 +47,14 @@ pub fn run() {
             app.manage(scanner);
             Ok(())
         })
+        // Rescan when the window gains focus, throttled (spec §5.1).
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(true) = event {
+                if let Some(scanner) = window.try_state::<scan::Scanner>() {
+                    scanner.focus();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::list_workspaces,
             commands::add_workspace,

@@ -6,6 +6,7 @@
 //! [`Scanner`] runs scans on a background thread and coalesces triggers.
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::agents::AgentAdapter;
 use crate::store::{ScannedSource, Store, StoreError};
@@ -63,47 +64,86 @@ fn scan(store: &Mutex<Store>, agent: &dyn AgentAdapter, full: bool) -> Result<Sc
 /// Runs scans on a background thread, one at a time. A trigger during a scan
 /// queues at most one follow-up, so a burst of triggers costs two scans at
 /// most. The job gets `true` for a full rescan ([`Scanner::trigger_full`]);
-/// a full request during a scan makes the follow-up full. `on_state(true)` fires when scanning starts and `on_state(false)`
-/// when it stops (after any follow-up).
+/// a full request during a scan makes the follow-up full. `on_state(true)`
+/// fires when scanning starts and `on_state(false)` when it stops (after any
+/// follow-up).
+///
+/// [`Scanner::focus`] is the window-focus trigger: it is dropped when any
+/// trigger was accepted in the last [`FOCUS_INTERVAL`], so focus scans run at
+/// most once per interval and never right after a startup or refresh scan.
 #[derive(Clone)]
 pub struct Scanner {
     inner: Arc<Inner>,
 }
 
+/// The least time between focus scans (spec §5.1).
+pub const FOCUS_INTERVAL: Duration = Duration::from_secs(10);
+
 struct Inner {
     state: Mutex<State>,
     job: Box<dyn Fn(bool) + Send + Sync>,
     on_state: Box<dyn Fn(bool) + Send + Sync>,
+    clock: Box<dyn Fn() -> Instant + Send + Sync>,
 }
 
 #[derive(Default)]
 struct State {
     running: bool,
     pending: bool,
+    /// When a trigger last started or queued a scan.
+    last_trigger: Option<Instant>,
     /// The pending (or about-to-start) scan is a full rescan.
     full: bool,
 }
 
 impl Scanner {
     pub fn new(job: impl Fn(bool) + Send + Sync + 'static, on_state: impl Fn(bool) + Send + Sync + 'static) -> Self {
+        Self::with_clock(job, on_state, Instant::now)
+    }
+
+    /// Like [`Scanner::new`], reading the time from `clock` (for tests).
+    pub fn with_clock(
+        job: impl Fn(bool) + Send + Sync + 'static,
+        on_state: impl Fn(bool) + Send + Sync + 'static,
+        clock: impl Fn() -> Instant + Send + Sync + 'static,
+    ) -> Self {
         Scanner {
-            inner: Arc::new(Inner { state: Mutex::default(), job: Box::new(job), on_state: Box::new(on_state) }),
+            inner: Arc::new(Inner {
+                state: Mutex::default(),
+                job: Box::new(job),
+                on_state: Box::new(on_state),
+                clock: Box::new(clock),
+            }),
         }
     }
 
-    /// Start a scan now, or queue one follow-up if a scan is running.
+    /// Start a scan now, or queue one follow-up if a scan is running
+    /// (startup and the refresh button; never throttled).
     pub fn trigger(&self) {
-        self.start(false);
+        let state = lock(&self.inner.state);
+        self.start(state);
     }
 
     /// Like [`Scanner::trigger`], but the scan re-parses every file (Rescan).
     pub fn trigger_full(&self) {
-        self.start(true);
+        let mut state = lock(&self.inner.state);
+        state.full = true;
+        self.start(state);
     }
 
-    fn start(&self, full: bool) {
-        let mut state = lock(&self.inner.state);
-        state.full |= full;
+    /// The window gained focus: trigger, unless a trigger was accepted within
+    /// the last [`FOCUS_INTERVAL`].
+    pub fn focus(&self) {
+        let state = lock(&self.inner.state);
+        let now = (self.inner.clock)();
+        if state.last_trigger.is_some_and(|last| now.saturating_duration_since(last) < FOCUS_INTERVAL) {
+            return;
+        }
+        self.start(state);
+    }
+
+    fn start(&self, mut state: std::sync::MutexGuard<'_, State>) {
+        state.last_trigger = Some((self.inner.clock)());
         if state.running {
             state.pending = true;
             return;

@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
 /**
- * Background transcript scans (spec §5.1). The backend scans on startup and
- * on `refresh()`; this tracks whether one is running (for the spinner) and
+ * Background transcript scans (spec §5.1). The backend scans on startup, on
+ * window focus (throttled) and on `refresh()`; this tracks whether one is running (for the spinner) and
  * calls `onFinished` when one ends, so the UI reloads the stored records.
  */
 export function useScan(onFinished: () => void) {
