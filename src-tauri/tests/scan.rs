@@ -284,3 +284,67 @@ fn adding_a_workspace_at_a_dismissed_path_restores_it() {
 
     assert!(f.store.lock().unwrap().list_dismissed_paths().unwrap().is_empty());
 }
+
+#[test]
+fn a_restored_path_can_reappear_as_a_suggestion() {
+    let f = Fixture::new();
+    let app = f.dir("app");
+    f.transcript("p", "s1", app.as_str(), &["2026-10-24T04:00:00Z"]);
+    f.scan();
+    f.store.lock().unwrap().dismiss_path(&app).unwrap();
+
+    f.store.lock().unwrap().restore_dismissed_path(&app).unwrap();
+
+    assert!(f.store.lock().unwrap().list_dismissed_paths().unwrap().is_empty());
+    assert_eq!(paths(&f.suggestions()), vec![app.to_string()]);
+}
+
+#[test]
+fn a_rescan_parses_every_file_on_disk_regardless_of_source_key() {
+    let f = Fixture::new();
+    let app = f.dir("app");
+    f.transcript("p", "s1", app.as_str(), &["2026-10-24T04:00:00Z"]);
+    f.transcript("p", "s2", app.as_str(), &["2026-10-24T05:00:00Z"]);
+    f.scan();
+
+    let report = scan::run_full(&f.store, &f.agent()).unwrap();
+
+    assert_eq!(report.parsed, 2);
+    assert_eq!(f.scan().parsed, 0, "an ordinary scan still skips unchanged files");
+}
+
+#[test]
+fn a_rescan_keeps_sessions_whose_transcript_is_gone() {
+    let f = Fixture::new();
+    let app = f.dir("app");
+    let path = f.transcript("p", "s1", app.as_str(), &["2026-10-24T04:00:00Z"]);
+    f.scan();
+    fs::remove_file(path).unwrap();
+
+    scan::run_full(&f.store, &f.agent()).unwrap();
+
+    assert_eq!(f.store.lock().unwrap().list_sessions().unwrap().len(), 1);
+}
+
+#[test]
+fn changing_the_transcript_root_keeps_sessions_and_reads_the_new_root() {
+    let f = Fixture::new();
+    let old = f.dir("old");
+    let new = f.dir("new");
+    f.transcript("p", "s1", old.as_str(), &["2026-10-24T04:00:00Z"]);
+    f.scan();
+
+    let other = tempfile::tempdir().unwrap();
+    let dir = other.path().join("projects").join("q");
+    fs::create_dir_all(&dir).unwrap();
+    let line = serde_json::json!({"type": "user", "cwd": new.as_str(), "timestamp": "2026-10-25T04:00:00Z"});
+    fs::write(dir.join("s2.jsonl"), format!("{line}\n")).unwrap();
+    let moved = ClaudeCode::on_path().with_transcript_root(other.path().to_path_buf());
+    scan::run(&f.store, &moved).unwrap();
+
+    let mut found = paths(&f.suggestions());
+    found.sort();
+    let mut expected = vec![old.to_string(), new.to_string()];
+    expected.sort();
+    assert_eq!(found, expected);
+}

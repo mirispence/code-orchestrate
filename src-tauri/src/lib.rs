@@ -30,11 +30,19 @@ pub fn run() {
             // The theme follows the OS unless settings.json overrides it (spec §8.4).
             let settings = settings::SettingsFile::new(data_dir.join(settings::SETTINGS_FILE_NAME));
             commands::apply_settings(app.handle(), &settings.load());
-            app.manage::<commands::AppSettings>(Arc::new(Mutex::new(settings)));
+            let settings: commands::AppSettings = Arc::new(Mutex::new(settings));
+            app.manage::<commands::AppSettings>(Arc::clone(&settings));
+            // Probe the Claude Code executable at startup for the status line (spec §9.3).
+            let probe = commands::ExecutableProbe::default();
+            app.manage::<commands::ExecutableProbe>(Arc::clone(&probe));
+            let probe_settings = Arc::clone(&settings);
+            std::thread::spawn(move || {
+                commands::probe_executable(&probe_settings, &probe, true);
+            });
             let store: commands::AppStore = Arc::new(Mutex::new(store::Store::open(&data_dir.join(DB_FILE_NAME))?));
             app.manage::<commands::AppStore>(Arc::clone(&store));
             // Scan transcripts in the background on startup (spec §5.1).
-            let scanner = commands::scanner(app.handle().clone(), store);
+            let scanner = commands::scanner(app.handle().clone(), store, settings);
             scanner.trigger();
             app.manage(scanner);
             Ok(())
@@ -55,6 +63,11 @@ pub fn run() {
             commands::list_suggestions,
             commands::dismiss_path,
             commands::test_terminal,
+            commands::claude_code_status,
+            commands::list_dismissed_paths,
+            commands::restore_dismissed_path,
+            commands::rescan_transcripts,
+            commands::open_data_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
