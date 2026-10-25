@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useId, useState } from "react";
 
+import { AddWorkspaceErrorText } from "@/components/AddWorkspaceErrorText";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type Saved, type Workspace } from "@/lib/api";
+import { api, type AddWorkspaceError, type Saved, type Workspace } from "@/lib/api";
 import { addTag, tagKey } from "@/lib/tags";
 
 type EditWorkspaceDialogProps = {
@@ -24,6 +25,8 @@ type EditWorkspaceDialogProps = {
   /** `movedFrom` is set when the new path was taken off another Workspace's former paths. */
   onSaved: (saved: Saved) => void;
   onRemoved: (id: number) => void;
+  /** Jump to the Workspace that already owns a rejected path. */
+  onShowWorkspace: (id: number) => void;
 };
 
 /** Edit dialog: name, path, tags, note, former paths and Remove Workspace (spec §8.2, §6.2). */
@@ -46,6 +49,7 @@ function EditWorkspaceForm({
   tagsInUse,
   onSaved,
   onRemoved,
+  onShowWorkspace,
 }: { workspace: Workspace } & Omit<EditWorkspaceDialogProps, "workspace" | "onClose">) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [name, setName] = useState(workspace.name);
@@ -54,7 +58,7 @@ function EditWorkspaceForm({
   const [draftTag, setDraftTag] = useState("");
   const [path, setPath] = useState(workspace.path);
   const [formerPaths, setFormerPaths] = useState(workspace.formerPaths);
-  const [error, setError] = useState<{ message: string } | null>(null);
+  const [error, setError] = useState<AddWorkspaceError | null>(null);
   const [saving, setSaving] = useState(false);
   const suggestionsId = useId();
   const formerPathsId = useId();
@@ -245,7 +249,7 @@ function EditWorkspaceForm({
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          {error.message}
+          <AddWorkspaceErrorText error={error} onShowWorkspace={onShowWorkspace} />
         </p>
       )}
       <DialogFooter className="sm:justify-between">

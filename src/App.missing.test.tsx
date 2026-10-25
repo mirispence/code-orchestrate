@@ -173,6 +173,28 @@ describe("A missing Workspace", () => {
   });
 });
 
+describe("Locate… onto a path another Workspace has", () => {
+  it("is rejected with a link to that Workspace", async () => {
+    const other = workspace({ id: 2, name: "Other", path: "E:\other" });
+    mocked.listWorkspaces.mockResolvedValue([workspace({ missing: true }), other]);
+    mocked.pickFolder.mockResolvedValue("E:\other");
+    mocked.repointWorkspace.mockResolvedValue({
+      ok: false,
+      error: { kind: "pathTaken", message: "Already a Workspace: Other", workspaceId: 2, workspaceName: "Other" },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await select(user, "app");
+
+    await user.click(await main().findByRole("button", { name: "Locate…" }));
+    const alert = await main().findByRole("alert");
+    expect(alert).toHaveTextContent("Already a Workspace: Other");
+    await user.click(within(alert).getByRole("button", { name: "Other" }));
+
+    expect(await main().findByRole("heading", { name: "Other" })).toBeInTheDocument();
+  });
+});
+
 describe("Editing a Workspace's path", () => {
   async function openEdit(user: ReturnType<typeof userEvent.setup>) {
     await select(user, "app");
@@ -231,8 +253,31 @@ describe("Editing a Workspace's path", () => {
     await user.type(path, "E:\\other");
     await user.click(dialog.getByRole("button", { name: "Save" }));
 
-    expect(await dialog.findByRole("alert")).toHaveTextContent("Already a Workspace: Other");
+    const alert = await dialog.findByRole("alert");
+    expect(alert).toHaveTextContent("Already a Workspace: Other");
     expect(mocked.updateWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("links a taken path to the Workspace that owns it", async () => {
+    const other = workspace({ id: 2, name: "Other", path: "E:\other" });
+    mocked.listWorkspaces.mockResolvedValue([workspace(), other]);
+    mocked.repointWorkspace.mockResolvedValue({
+      ok: false,
+      error: { kind: "pathTaken", message: "Already a Workspace: Other", workspaceId: 2, workspaceName: "Other" },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const dialog = await openEdit(user);
+
+    const path = dialog.getByLabelText("Path");
+    await user.clear(path);
+    await user.type(path, "E:\other");
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    const alert = await dialog.findByRole("alert");
+    await user.click(within(alert).getByRole("button", { name: "Other" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(main().getByRole("heading", { name: "Other" })).toBeInTheDocument();
   });
 
   it("lists former paths and removes one on Save", async () => {

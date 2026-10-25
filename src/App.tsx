@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddWorkspaceDialog } from "@/components/AddWorkspaceDialog";
+import { AddWorkspaceErrorText } from "@/components/AddWorkspaceErrorText";
 import { EditWorkspaceDialog } from "@/components/EditWorkspaceDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { SettingsPage } from "@/components/SettingsPage";
@@ -8,7 +9,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SuggestionsInbox } from "@/components/SuggestionsInbox";
 import { WorkspaceDetail } from "@/components/WorkspaceDetail";
 import { Button } from "@/components/ui/button";
-import { api, type Saved, type Suggestion, type Workspace, type WorkspaceStats } from "@/lib/api";
+import { api, type AddWorkspaceError, type Saved, type Suggestion, type Workspace, type WorkspaceStats } from "@/lib/api";
 import { tagsInUse } from "@/lib/tags";
 import { useScan } from "@/lib/useScan";
 import { useSettings } from "@/lib/useSettings";
@@ -22,7 +23,7 @@ export default function App() {
   const [pickedPath, setPickedPath] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<AddWorkspaceError | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const settings = useSettings();
@@ -85,7 +86,7 @@ export default function App() {
     const path = await api.pickFolder();
     if (path === null) return;
     const result = await api.repointWorkspace(ws.id, path);
-    setActionError(result.ok ? null : result.error.message);
+    setActionError(result.ok ? null : result.error);
     if (result.ok) showMoveNotice(result.value);
     void reload();
   }
@@ -103,7 +104,7 @@ export default function App() {
 
   async function togglePin(ws: Workspace) {
     const result = await api.setPinned(ws.id, !ws.pinned);
-    setActionError(result.ok ? null : result.error.message);
+    setActionError(result.ok ? null : result.error);
     void reload();
   }
 
@@ -115,8 +116,11 @@ export default function App() {
     void reload();
   }
 
+  /** Jump to a Workspace, closing whatever dialog or error linked to it. */
   function showWorkspace(id: number) {
     setPickedPath(null);
+    setEditingId(null);
+    setActionError(null);
     selectWorkspace(id);
   }
 
@@ -153,7 +157,7 @@ export default function App() {
         )}
         {actionError !== null && (
           <p role="alert" className="mx-9 mt-6 rounded-lg border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-            {actionError}
+            <AddWorkspaceErrorText error={actionError} onShowWorkspace={showWorkspace} />
           </p>
         )}
         {notice !== null && (
@@ -198,6 +202,7 @@ export default function App() {
         workspace={editing}
         tagsInUse={tagsInUse(workspaces)}
         onClose={() => setEditingId(null)}
+        onShowWorkspace={showWorkspace}
         onSaved={(saved) => {
           setEditingId(null);
           showMoveNotice(saved);
