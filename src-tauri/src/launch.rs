@@ -116,6 +116,20 @@ fn resume_cwd(store: &Store, workspace: &Workspace, session_id: &str) -> Result<
     }
 }
 
+/// Show `dir` in the system file manager (Settings › Data › Open data folder).
+/// Explorer exits non-zero even when it opens the folder, so only a failure
+/// to start counts, and nothing waits for it.
+pub fn open_folder(spawner: &dyn Spawner, dir: &str) -> io::Result<()> {
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    spawner.spawn(&TerminalCommand { program: program.into(), args: vec![dir.into()], current_dir: None })
+}
+
 /// Settings › Terminal › Test: run the Agent's version command (`claude
 /// --version`) in `home` through `terminal` (spec §9.2).
 pub fn test_terminal(
