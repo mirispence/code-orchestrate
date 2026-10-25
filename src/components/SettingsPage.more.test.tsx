@@ -112,6 +112,15 @@ describe("Settings › Agents › Claude Code", () => {
     expect(change).toHaveBeenCalledWith("agents.claude-code.transcriptRoot", "D:\\cc");
   });
 
+  it("saves an override when Esc leaves the page from the field", async () => {
+    const user = userEvent.setup();
+    const { change } = renderPage();
+
+    await user.type(screen.getByRole("textbox", { name: "Executable path" }), "D:\\c.exe{Escape}");
+
+    expect(change).toHaveBeenCalledWith("agents.claude-code.executable", "D:\\c.exe");
+  });
+
   it("re-checks the status when an override changes", async () => {
     const { rerender } = renderPage();
     await waitFor(() => expect(mocked.claudeCodeStatus).toHaveBeenCalledTimes(1));
