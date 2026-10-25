@@ -119,6 +119,34 @@ fn cmd_metacharacters_in_an_unquoted_shim_path_are_caret_escaped() {
     assert_eq!(cmd.args, ["/k".to_owned(), shim.replace('&', "^&")]);
 }
 
+/// The Console window preset runs the shim through two cmd parses (its own
+/// `cmd /c start`, then the adapter's `cmd /k`), each stripping one level of
+/// carets, so `^` reaches it as `^^^^` and `&` as `^^^&`. (Checked by hand
+/// against real cmd.exe: the shim runs.)
+#[cfg(windows)]
+#[test]
+fn a_console_window_escapes_an_npm_shim_path_once_per_cmd_layer() {
+    use code_orchestrate_lib::launch::{Terminal, TerminalCommand};
+
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().to_str().unwrap().to_owned();
+    assert!(!root_path.contains(|c: char| c.is_whitespace() || "&|<>^".contains(c)), "{root_path}");
+    let bin = root.path().join("a^b&c");
+    std::fs::create_dir(&bin).unwrap();
+    touch(&bin, "claude.cmd");
+    let agent = ClaudeCode::with_search_path(vec![bin]);
+    let cmd = agent.launch_command(&workspace(), &LaunchMode::Resume("s1".into())).unwrap();
+
+    let wrapped = Terminal::ConsoleWindow.wrap(&cmd);
+
+    let shim = format!(r"{root_path}\a^^^^b^^^&c\claude.cmd");
+    let args = ["/c", "start", "", "/D", r"C:\code\my project", "cmd", "/k", &shim, "--resume", "s1"];
+    assert_eq!(
+        wrapped,
+        TerminalCommand { program: "cmd.exe".into(), args: args.map(str::to_owned).to_vec(), current_dir: None }
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn the_first_directory_on_the_search_path_wins() {
