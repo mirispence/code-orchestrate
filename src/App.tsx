@@ -168,7 +168,7 @@ export default function App() {
           </div>
         )}
         {settingsOpen ? (
-          <SettingsPage settings={settings} onClose={closeSettings} />
+          <SettingsPage settings={settings} onClose={closeSettings} onRestored={() => void reload()} />
         ) : suggestionsOpen ? (
           <SuggestionsInbox suggestions={suggestions} onAdd={addSuggestion} onDismiss={dismissSuggestion} />
         ) : selected ? (

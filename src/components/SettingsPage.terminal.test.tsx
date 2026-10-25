@@ -8,7 +8,14 @@ import type { SettingsState } from "@/lib/useSettings";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
-  return { ...actual, api: { testTerminal: vi.fn() } };
+  return {
+    ...actual,
+    api: {
+      testTerminal: vi.fn(),
+      claudeCodeStatus: vi.fn(() => new Promise(() => {})),
+      listDismissedPaths: vi.fn(() => new Promise(() => {})),
+    },
+  };
 });
 
 const mocked = vi.mocked(api);
@@ -22,6 +29,8 @@ function snapshot(values: Partial<SettingValues> = {}, presets: readonly string[
       "terminal.preset": "windowsTerminal",
       "terminal.windowsTerminal.target": "newWindow",
       "terminal.custom": null,
+      "agents.claude-code.executable": "",
+      "agents.claude-code.transcriptRoot": "",
       ...values,
     },
     warnings: {},
@@ -51,6 +60,9 @@ function templateBox() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // The other sections' backend calls stay pending; this file tests Terminal.
+  mocked.claudeCodeStatus.mockReturnValue(new Promise(() => {}));
+  mocked.listDismissedPaths.mockReturnValue(new Promise(() => {}));
 });
 
 describe("Settings › Terminal", () => {

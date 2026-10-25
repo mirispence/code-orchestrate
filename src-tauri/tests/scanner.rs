@@ -12,7 +12,8 @@ const WAIT: Duration = Duration::from_secs(5);
 
 /// A scan job that announces each start and then waits to be released.
 struct Gate {
-    started: Receiver<()>,
+    /// One message per scan start: whether it was a full rescan.
+    started: Receiver<bool>,
     release: Sender<()>,
     states: Receiver<bool>,
     scanner: Scanner,
@@ -26,8 +27,8 @@ fn gated() -> Gate {
     let started_tx = Mutex::new(started_tx);
     let states_tx = Mutex::new(states_tx);
     let scanner = Scanner::new(
-        move || {
-            started_tx.lock().unwrap().send(()).unwrap();
+        move |full| {
+            started_tx.lock().unwrap().send(full).unwrap();
             release_rx.lock().unwrap().recv_timeout(WAIT).unwrap();
         },
         move |running| states_tx.lock().unwrap().send(running).unwrap(),
@@ -71,6 +72,37 @@ fn triggers_during_a_scan_coalesce_into_one_follow_up() {
     assert!(g.states.try_recv().is_err());
 }
 
+#[test]
+fn an_ordinary_trigger_is_not_a_full_rescan() {
+    let g = gated();
+    g.scanner.trigger();
+    assert_eq!(g.started.recv_timeout(WAIT), Ok(false));
+    g.release.send(()).unwrap();
+}
+
+#[test]
+fn a_rescan_runs_a_full_scan() {
+    let g = gated();
+    g.scanner.trigger_full();
+    assert_eq!(g.started.recv_timeout(WAIT), Ok(true));
+    g.release.send(()).unwrap();
+}
+
+#[test]
+fn a_rescan_during_a_scan_makes_the_follow_up_full() {
+    let g = gated();
+    g.scanner.trigger();
+    assert_eq!(g.started.recv_timeout(WAIT), Ok(false));
+
+    g.scanner.trigger_full();
+    g.scanner.trigger();
+    g.release.send(()).unwrap();
+
+    assert_eq!(g.started.recv_timeout(WAIT), Ok(true));
+    g.release.send(()).unwrap();
+    assert!(g.started.recv_timeout(Duration::from_millis(200)).is_err());
+}
+
 /// A clock the test moves by hand.
 #[derive(Clone)]
 struct FakeClock {
@@ -98,7 +130,7 @@ fn counting(clock: &FakeClock) -> (Scanner, Receiver<()>, Receiver<bool>) {
     let states_tx = Mutex::new(states_tx);
     let clock = clock.clone();
     let scanner = Scanner::with_clock(
-        move || started_tx.lock().unwrap().send(()).unwrap(),
+        move |_full| started_tx.lock().unwrap().send(()).unwrap(),
         move |running| states_tx.lock().unwrap().send(running).unwrap(),
         move || clock.now(),
     );

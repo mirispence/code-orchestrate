@@ -85,6 +85,8 @@ beforeEach(() => {
         "terminal.preset": "windowsTerminal",
         "terminal.windowsTerminal.target": "newWindow",
         "terminal.custom": null,
+        "agents.claude-code.executable": "",
+        "agents.claude-code.transcriptRoot": "",
       },
       warnings: {},
       fileError: null,
