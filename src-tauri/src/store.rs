@@ -384,6 +384,13 @@ impl Store {
         insert_dismissed(&self.conn, path)
     }
 
+    /// Un-dismiss a path (Settings › Suggestions › Restore) so it can come
+    /// back as a Suggestion. A path that is not dismissed is left alone.
+    pub fn restore_dismissed_path(&self, path: &NormalizedPath) -> Result<(), StoreError> {
+        self.conn.execute("DELETE FROM dismissed_path WHERE path_key = ?1", [path.comparison_key()])?;
+        Ok(())
+    }
+
     /// Dismissed paths, oldest dismissal first.
     pub fn list_dismissed_paths(&self) -> Result<Vec<NormalizedPath>, StoreError> {
         let mut stmt = self.conn.prepare("SELECT path FROM dismissed_path ORDER BY dismissed_at, path")?;

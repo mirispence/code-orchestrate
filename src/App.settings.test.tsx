@@ -27,6 +27,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
       startScan: vi.fn(),
       scanRunning: vi.fn(),
       onScanState: vi.fn(),
+      claudeCodeStatus: vi.fn(),
+      listDismissedPaths: vi.fn(),
     },
   };
 });
@@ -38,6 +40,8 @@ const defaults: SettingsSnapshot["values"] = {
   "terminal.preset": "windowsTerminal",
   "terminal.windowsTerminal.target": "newWindow",
   "terminal.custom": null,
+  "agents.claude-code.executable": "",
+  "agents.claude-code.transcriptRoot": "",
 };
 
 function snapshot(overrides: Partial<SettingsSnapshot> = {}): SettingsSnapshot {
@@ -75,6 +79,11 @@ beforeEach(() => {
   mocked.scanRunning.mockResolvedValue(false);
   mocked.onScanState.mockResolvedValue(() => {});
   mocked.getSettings.mockResolvedValue({ ok: true, value: snapshot() });
+  mocked.claudeCodeStatus.mockResolvedValue({
+    executable: { state: "found", path: "claude.exe", version: null },
+    transcriptRoot: { state: "ok", path: "C:\\Users\\me\\.claude" },
+  });
+  mocked.listDismissedPaths.mockResolvedValue({ ok: true, value: [] });
   mocked.agentStatus.mockResolvedValue({
     id: "claude-code",
     displayName: "Claude Code",

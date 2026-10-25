@@ -31,11 +31,21 @@ pub enum ScanError {
 /// Scan `agent`'s transcript store into `store`. Session records are never
 /// deleted, even when their transcript is gone (spec §4.3).
 pub fn run(store: &Mutex<Store>, agent: &dyn AgentAdapter) -> Result<ScanReport, ScanError> {
+    scan(store, agent, false)
+}
+
+/// Settings › Rescan transcripts: re-parse every file still on disk,
+/// whatever its source key. Like [`run`], it never deletes a record.
+pub fn run_full(store: &Mutex<Store>, agent: &dyn AgentAdapter) -> Result<ScanReport, ScanError> {
+    scan(store, agent, true)
+}
+
+fn scan(store: &Mutex<Store>, agent: &dyn AgentAdapter, full: bool) -> Result<ScanReport, ScanError> {
     let known = store.lock().map_err(|_| ScanError::Poisoned)?.source_keys(agent.id())?;
     let sources = agent.list_sources();
     let changed: Vec<&_> = sources
         .iter()
-        .filter(|key| known.get(key.path.to_string_lossy().as_ref()) != Some(&(key.mtime, key.size)))
+        .filter(|key| full || known.get(key.path.to_string_lossy().as_ref()) != Some(&(key.mtime, key.size)))
         .collect();
     // A file that cannot be read now keeps no source key, so the next scan retries it.
     let parsed: Vec<ScannedSource> = changed
@@ -53,8 +63,10 @@ pub fn run(store: &Mutex<Store>, agent: &dyn AgentAdapter) -> Result<ScanReport,
 
 /// Runs scans on a background thread, one at a time. A trigger during a scan
 /// queues at most one follow-up, so a burst of triggers costs two scans at
-/// most. `on_state(true)` fires when scanning starts and `on_state(false)`
-/// when it stops (after any follow-up).
+/// most. The job gets `true` for a full rescan ([`Scanner::trigger_full`]);
+/// a full request during a scan makes the follow-up full. `on_state(true)`
+/// fires when scanning starts and `on_state(false)` when it stops (after any
+/// follow-up).
 ///
 /// [`Scanner::focus`] is the window-focus trigger: it is dropped when any
 /// trigger was accepted in the last [`FOCUS_INTERVAL`], so focus scans run at
@@ -69,7 +81,7 @@ pub const FOCUS_INTERVAL: Duration = Duration::from_secs(10);
 
 struct Inner {
     state: Mutex<State>,
-    job: Box<dyn Fn() + Send + Sync>,
+    job: Box<dyn Fn(bool) + Send + Sync>,
     on_state: Box<dyn Fn(bool) + Send + Sync>,
     clock: Box<dyn Fn() -> Instant + Send + Sync>,
 }
@@ -80,16 +92,18 @@ struct State {
     pending: bool,
     /// When a trigger last started or queued a scan.
     last_trigger: Option<Instant>,
+    /// The pending (or about-to-start) scan is a full rescan.
+    full: bool,
 }
 
 impl Scanner {
-    pub fn new(job: impl Fn() + Send + Sync + 'static, on_state: impl Fn(bool) + Send + Sync + 'static) -> Self {
+    pub fn new(job: impl Fn(bool) + Send + Sync + 'static, on_state: impl Fn(bool) + Send + Sync + 'static) -> Self {
         Self::with_clock(job, on_state, Instant::now)
     }
 
     /// Like [`Scanner::new`], reading the time from `clock` (for tests).
     pub fn with_clock(
-        job: impl Fn() + Send + Sync + 'static,
+        job: impl Fn(bool) + Send + Sync + 'static,
         on_state: impl Fn(bool) + Send + Sync + 'static,
         clock: impl Fn() -> Instant + Send + Sync + 'static,
     ) -> Self {
@@ -107,6 +121,13 @@ impl Scanner {
     /// (startup and the refresh button; never throttled).
     pub fn trigger(&self) {
         let state = lock(&self.inner.state);
+        self.start(state);
+    }
+
+    /// Like [`Scanner::trigger`], but the scan re-parses every file (Rescan).
+    pub fn trigger_full(&self) {
+        let mut state = lock(&self.inner.state);
+        state.full = true;
         self.start(state);
     }
 
@@ -134,8 +155,9 @@ impl Scanner {
         let inner = Arc::clone(&self.inner);
         std::thread::spawn(move || {
             loop {
+                let full = std::mem::take(&mut lock(&inner.state).full);
                 // A panicking job must not leave the Scanner stuck "running".
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (inner.job)()));
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (inner.job)(full)));
                 let mut state = lock(&inner.state);
                 if state.pending {
                     state.pending = false;

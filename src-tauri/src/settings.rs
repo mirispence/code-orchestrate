@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 
+use crate::agents::claude_code::ClaudeCode;
 use crate::launch::{CustomTemplate, LaunchError, Terminal};
 
 /// The settings file's name inside the app data folder (spec §4.1).
@@ -39,7 +40,15 @@ const DEFS: &[Def] = &[
         choices: WT_TARGETS,
     },
     Def { key: "terminal.custom", default: || Value::Null, check: check_custom, choices: &[] },
+    // Blank means the default: `claude` on PATH, and CLAUDE_CONFIG_DIR else ~/.claude (spec §5.3).
+    Def { key: EXECUTABLE_KEY, default: || json!(""), check: check_text, choices: &[] },
+    Def { key: TRANSCRIPT_ROOT_KEY, default: || json!(""), check: check_text, choices: &[] },
 ];
+
+/// Settings › Agents › Claude Code › Executable path.
+pub const EXECUTABLE_KEY: &str = "agents.claude-code.executable";
+/// Settings › Agents › Claude Code › Transcript root.
+pub const TRANSCRIPT_ROOT_KEY: &str = "agents.claude-code.transcriptRoot";
 
 const THEMES: &[&str] = &["system", "light", "dark"];
 /// Non-Windows platforms offer only Custom in v1 (spec §7.2). The first is the default.
@@ -56,6 +65,13 @@ fn check_preset(value: &Value) -> Result<(), String> {
 
 fn check_wt_target(value: &Value) -> Result<(), String> {
     one_of(value, WT_TARGETS)
+}
+
+fn check_text(value: &Value) -> Result<(), String> {
+    match value {
+        Value::String(_) => Ok(()),
+        _ => Err(format!("{value} is not text")),
+    }
 }
 
 /// `null` (none) or an argv array that [`CustomTemplate`] accepts.
@@ -129,6 +145,24 @@ impl Snapshot {
                 _ => Terminal::WindowsTerminalNewWindow,
             }),
         }
+    }
+
+    /// The Claude Code adapter with this snapshot's overrides (spec §5.3).
+    pub fn claude_code(&self) -> ClaudeCode {
+        let mut agent = ClaudeCode::on_path();
+        if let Some(exe) = self.override_path(EXECUTABLE_KEY) {
+            agent = agent.with_executable(exe);
+        }
+        if let Some(root) = self.override_path(TRANSCRIPT_ROOT_KEY) {
+            agent = agent.with_transcript_root(root);
+        }
+        agent
+    }
+
+    /// A path override, `None` when blank. The path itself is kept as typed.
+    fn override_path(&self, key: &str) -> Option<PathBuf> {
+        let text = self.values.get(key)?.as_str()?;
+        (!text.trim().is_empty()).then(|| PathBuf::from(text))
     }
 
     pub fn theme(&self) -> Theme {

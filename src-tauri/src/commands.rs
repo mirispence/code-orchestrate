@@ -9,7 +9,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::attribution::{self, Suggestion, WorkspaceStats};
 use crate::scan::{self, Scanner};
 use crate::settings::{SettingsError, SettingsFile, Snapshot, Theme};
-use crate::agents::claude_code::ClaudeCode;
+use crate::agents::claude_code::{ClaudeCode, ExecutableStatus, TranscriptRootStatus};
+use crate::paths::{NormalizedPath, normalize};
 use crate::agents::{self, AgentStatus, LaunchMode};
 use crate::launch::{self, CustomTemplate, LaunchError, OsSpawner, Terminal};
 use crate::store::{Session, Store, Workspace, WorkspaceEdit};
@@ -180,17 +181,67 @@ pub async fn reset_settings(
     with_settings(&app, &settings, |f| f.reset()).await
 }
 
-/// The v1 Agent. Built per call so its executable is re-resolved every time.
-fn agent() -> ClaudeCode {
-    ClaudeCode::on_path()
+/// The v1 Agent with the overrides in Settings (spec §5.3). Built per call,
+/// from settings.json read fresh, so its executable is re-resolved every time.
+fn agent(settings: &AppSettings) -> ClaudeCode {
+    match settings.lock() {
+        Ok(file) => file.load().claude_code(),
+        Err(poisoned) => poisoned.into_inner().load().claude_code(),
+    }
 }
 
 /// The Agent's identity, capabilities and resolved executable (or `null`).
 #[tauri::command]
-pub async fn agent_status() -> Result<AgentStatus, InternalError> {
-    tauri::async_runtime::spawn_blocking(|| agents::agent_status(&agent()))
+pub async fn agent_status(settings: State<'_, AppSettings>) -> Result<AgentStatus, InternalError> {
+    let settings = Arc::clone(&settings);
+    tauri::async_runtime::spawn_blocking(move || agents::agent_status(&agent(&settings)))
         .await
         .map_err(InternalError::new)
+}
+
+/// The last `--version` probe, keyed by the executable override it ran with
+/// (spec §9.3: probed at startup, when Settings opens and when it changes).
+pub type ExecutableProbe = Arc<Mutex<Option<(Option<String>, ExecutableStatus)>>>;
+
+/// Settings › Agents › Claude Code status lines.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeCodeStatus {
+    pub executable: ExecutableStatus,
+    pub transcript_root: TranscriptRootStatus,
+}
+
+/// The cached executable status, re-probed when `refresh` is set or the
+/// executable override changed since the last probe.
+pub fn probe_executable(settings: &AppSettings, cache: &ExecutableProbe, refresh: bool) -> ExecutableStatus {
+    let agent = agent(settings);
+    let key = agent.executable_override();
+    if !refresh {
+        if let Some((cached_key, status)) = cache.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            if *cached_key == key {
+                return status.clone();
+            }
+        }
+    }
+    let status = agent.executable_status();
+    *cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, status.clone()));
+    status
+}
+
+#[tauri::command]
+pub async fn claude_code_status(
+    settings: State<'_, AppSettings>,
+    probe: State<'_, ExecutableProbe>,
+    refresh: bool,
+) -> Result<ClaudeCodeStatus, InternalError> {
+    let settings = Arc::clone(&settings);
+    let probe = Arc::clone(&probe);
+    tauri::async_runtime::spawn_blocking(move || ClaudeCodeStatus {
+        executable: probe_executable(&settings, &probe, refresh),
+        transcript_root: agent(&settings).transcript_root_status(),
+    })
+    .await
+    .map_err(InternalError::new)
 }
 
 /// How the UI asks to start a Session: `"new"`, `"continue"`, or
@@ -204,9 +255,10 @@ pub enum SessionStart {
 }
 
 /// The terminal chosen in Settings, read fresh so a hand edit applies at once.
-fn configured_terminal(settings: &AppSettings) -> Result<Terminal, LaunchError> {
+fn configured(settings: &AppSettings) -> Result<(Terminal, ClaudeCode), LaunchError> {
     let file = settings.lock().map_err(|e| LaunchError::Internal(e.to_string()))?;
-    file.load().terminal()
+    let snapshot = file.load();
+    Ok((snapshot.terminal()?, snapshot.claude_code()))
 }
 
 #[tauri::command]
@@ -223,8 +275,8 @@ pub async fn launch_session(
     };
     let settings = Arc::clone(&settings);
     with_store(&store, LaunchError::Internal, move |s| {
-        let terminal = configured_terminal(&settings)?;
-        launch::launch_session(s, &agent(), terminal, &OsSpawner, workspace_id, &mode)
+        let (terminal, agent) = configured(&settings)?;
+        launch::launch_session(s, &agent, terminal, &OsSpawner, workspace_id, &mode)
     })
     .await
 }
@@ -233,11 +285,14 @@ pub async fn launch_session(
 /// a scan starts and `false` when it (and any coalesced follow-up) finishes.
 pub const SCAN_STATE_EVENT: &str = "scan-state";
 
-/// The app's background scanner over the Claude Code transcripts.
-pub fn scanner(app: AppHandle, store: AppStore) -> Scanner {
+/// The app's background scanner over the Claude Code transcripts. Each scan
+/// reads the transcript root from settings afresh (spec §9.4).
+pub fn scanner(app: AppHandle, store: AppStore, settings: AppSettings) -> Scanner {
     Scanner::new(
-        move || {
-            if let Err(e) = scan::run(&store, &agent()) {
+        move |full| {
+            let agent = agent(&settings);
+            let result = if full { scan::run_full(&store, &agent) } else { scan::run(&store, &agent) };
+            if let Err(e) = result {
                 eprintln!("transcript scan failed: {e}");
             }
         },
@@ -288,15 +343,60 @@ pub async fn dismiss_path(store: State<'_, AppStore>, path: String) -> Result<()
     with_store(&store, WorkspaceError::Internal, move |s| workspaces::dismiss_path(s, &path)).await
 }
 
+/// Settings › Suggestions: the dismissed paths, oldest first.
+#[tauri::command]
+pub async fn list_dismissed_paths(store: State<'_, AppStore>) -> Result<Vec<NormalizedPath>, InternalError> {
+    with_store(&store, InternalError::new, |s| s.list_dismissed_paths().map_err(InternalError::new)).await
+}
+
+/// Settings › Suggestions › Restore: the path can come back as a Suggestion.
+#[tauri::command]
+pub async fn restore_dismissed_path(store: State<'_, AppStore>, path: String) -> Result<(), WorkspaceError> {
+    with_store(&store, WorkspaceError::Internal, move |s| {
+        let path = normalize(&path).map_err(|e| WorkspaceError::InvalidPath(e.to_string()))?;
+        Ok(s.restore_dismissed_path(&path)?)
+    })
+    .await
+}
+
+/// Settings › Data › Rescan transcripts: re-parse every transcript (spec §5.1).
+/// Returns at once; progress arrives as [`SCAN_STATE_EVENT`].
+#[tauri::command]
+pub fn rescan_transcripts(scanner: State<'_, Scanner>) {
+    scanner.trigger_full();
+}
+
+/// Settings › Data › Open data folder: show the app data folder (spec §4.1)
+/// in the system file manager.
+#[tauri::command]
+pub async fn open_data_folder(app: AppHandle) -> Result<(), InternalError> {
+    let dir = app.path().app_data_dir().map_err(InternalError::new)?;
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    // Explorer exits non-zero even when it opens the folder, so only a
+    // failure to start counts.
+    std::process::Command::new(program).arg(&dir).spawn().map(drop).map_err(InternalError::new)
+}
+
 /// Settings › Terminal › Test: run `claude --version` in the home directory
 /// through the custom argv `template` (spec §9.2).
 #[tauri::command]
-pub async fn test_terminal(app: AppHandle, template: Vec<String>) -> Result<(), LaunchError> {
+pub async fn test_terminal(
+    app: AppHandle,
+    settings: State<'_, AppSettings>,
+    template: Vec<String>,
+) -> Result<(), LaunchError> {
     let template = CustomTemplate::new(template).map_err(|message| LaunchError::TerminalNotConfigured { message })?;
     let home = app.path().home_dir().map_err(|e| LaunchError::Internal(e.to_string()))?;
     let home = home.to_string_lossy().into_owned();
+    let settings = Arc::clone(&settings);
     tauri::async_runtime::spawn_blocking(move || {
-        launch::test_terminal(&agent(), &Terminal::Custom(template), &OsSpawner, &home)
+        launch::test_terminal(&agent(&settings), &Terminal::Custom(template), &OsSpawner, &home)
     })
     .await
     .map_err(|e| LaunchError::Internal(e.to_string()))?
