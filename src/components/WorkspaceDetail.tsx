@@ -54,24 +54,33 @@ export function WorkspaceDetail({
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const hintId = useId();
 
-  // Resolved each time a Workspace is shown, so installing Claude Code is
-  // picked up without restarting.
+  // Resolved on each Workspace reload (selecting, refresh, a finished scan) and
+  // on window focus, so installing Claude Code is picked up without restarting.
+  // A reload hands over a new `workspace` object, even for the same id.
   useEffect(() => {
     let current = true;
-    api.agentStatus().then(
-      (status) => {
-        if (!current) return;
-        setAgent(status);
-        setStatusError(null);
-      },
-      (e: unknown) => {
-        if (current) setStatusError(e instanceof Error ? e.message : String(e));
-      },
-    );
+    // Checks can overlap (focus during a reload); only the newest one applies.
+    let sent = 0;
+    function check() {
+      const id = ++sent;
+      api.agentStatus().then(
+        (status) => {
+          if (!current || id !== sent) return;
+          setAgent(status);
+          setStatusError(null);
+        },
+        (e: unknown) => {
+          if (current && id === sent) setStatusError(e instanceof Error ? e.message : String(e));
+        },
+      );
+    }
+    check();
+    window.addEventListener("focus", check);
     return () => {
       current = false;
+      window.removeEventListener("focus", check);
     };
-  }, [workspace.id]);
+  }, [workspace]);
 
   // Re-read whenever the stats are (each reload after a scan or an edit).
   useEffect(() => {
