@@ -54,6 +54,8 @@ pub fn run() {
             commands::scan_running,
             commands::list_suggestions,
             commands::dismiss_path,
+            commands::workspace_stats,
+            commands::list_workspace_sessions,
             commands::test_terminal,
         ])
         .run(tauri::generate_context!())

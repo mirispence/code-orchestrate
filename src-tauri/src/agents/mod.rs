@@ -85,9 +85,47 @@ pub struct SourceKey {
 pub struct SessionSummary {
     pub session_id: String,
     pub first_cwd: NormalizedPath,
+    /// A display title, if the transcript offers one.
+    pub title: Option<String>,
     pub started_at: Option<i64>,
     pub last_activity_at: Option<i64>,
+    /// Time spent active, in milliseconds; `None` when the Agent does not report it.
+    pub active_time_ms: Option<i64>,
+    pub tokens: TokenUsage,
     pub source_path: PathBuf,
+}
+
+/// Token counts by kind. A field is `None` when the Agent does not report it
+/// (shown as "—", never 0).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub input: Option<i64>,
+    pub output: Option<i64>,
+    pub cache_write: Option<i64>,
+    pub cache_read: Option<i64>,
+}
+
+impl TokenUsage {
+    /// Every field reported, all zero.
+    pub const ZERO: TokenUsage =
+        TokenUsage { input: Some(0), output: Some(0), cache_write: Some(0), cache_read: Some(0) };
+
+    /// Field-wise sum. A field is `None` only when both sides lack it.
+    pub fn plus(self, other: TokenUsage) -> TokenUsage {
+        fn add(a: Option<i64>, b: Option<i64>) -> Option<i64> {
+            match (a, b) {
+                (None, None) => None,
+                (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
+            }
+        }
+        TokenUsage {
+            input: add(self.input, other.input),
+            output: add(self.output, other.output),
+            cache_write: add(self.cache_write, other.cache_write),
+            cache_read: add(self.cache_read, other.cache_read),
+        }
+    }
 }
 
 pub trait AgentAdapter: Send + Sync {

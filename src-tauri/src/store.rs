@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
-use crate::agents::{SessionSummary, SourceKey};
+use crate::agents::{SessionSummary, SourceKey, TokenUsage};
 use crate::paths::NormalizedPath;
 
 /// Ordered schema migrations. Migration `i` takes the DB from version `i` to `i + 1`.
@@ -116,13 +116,18 @@ pub struct NewWorkspace {
 }
 
 /// A stored Session (spec §4.2). Times are Unix epoch milliseconds, UTC.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Session {
     pub agent_id: String,
     pub session_id: String,
     pub first_cwd: NormalizedPath,
+    pub title: Option<String>,
     pub started_at: Option<i64>,
     pub last_activity_at: Option<i64>,
+    pub active_time_ms: Option<i64>,
+    /// Each field `None` when the Agent does not report it.
+    pub tokens: TokenUsage,
     pub source_path: String,
 }
 
@@ -309,7 +314,8 @@ impl Store {
     /// Every stored Session, matched to a Workspace or not.
     pub fn list_sessions(&self) -> Result<Vec<Session>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT agent_id, session_id, first_cwd, started_at, last_activity_at, source_path
+            "SELECT agent_id, session_id, first_cwd, title, started_at, last_activity_at, active_time_ms,
+                    tokens_input, tokens_output, tokens_cache_write, tokens_cache_read, source_path
              FROM session ORDER BY agent_id, session_id",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -317,9 +323,17 @@ impl Store {
                 agent_id: r.get(0)?,
                 session_id: r.get(1)?,
                 first_cwd: NormalizedPath::from_stored(r.get(2)?),
-                started_at: r.get(3)?,
-                last_activity_at: r.get(4)?,
-                source_path: r.get(5)?,
+                title: r.get(3)?,
+                started_at: r.get(4)?,
+                last_activity_at: r.get(5)?,
+                active_time_ms: r.get(6)?,
+                tokens: TokenUsage {
+                    input: r.get(7)?,
+                    output: r.get(8)?,
+                    cache_write: r.get(9)?,
+                    cache_read: r.get(10)?,
+                },
+                source_path: r.get(11)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -342,14 +356,34 @@ impl Store {
             let path = source.key.path.to_string_lossy();
             if let Some(s) = &source.session {
                 tx.execute(
-                    "INSERT INTO session (agent_id, session_id, first_cwd, started_at, last_activity_at, source_path)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                    "INSERT INTO session (agent_id, session_id, first_cwd, title, started_at, last_activity_at,
+                        active_time_ms, tokens_input, tokens_output, tokens_cache_write, tokens_cache_read, source_path)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                      ON CONFLICT (agent_id, session_id) DO UPDATE SET
                         first_cwd = excluded.first_cwd,
+                        title = excluded.title,
                         started_at = excluded.started_at,
                         last_activity_at = excluded.last_activity_at,
+                        active_time_ms = excluded.active_time_ms,
+                        tokens_input = excluded.tokens_input,
+                        tokens_output = excluded.tokens_output,
+                        tokens_cache_write = excluded.tokens_cache_write,
+                        tokens_cache_read = excluded.tokens_cache_read,
                         source_path = excluded.source_path",
-                    params![agent_id, s.session_id, s.first_cwd.as_str(), s.started_at, s.last_activity_at, path],
+                    params![
+                        agent_id,
+                        s.session_id,
+                        s.first_cwd.as_str(),
+                        s.title,
+                        s.started_at,
+                        s.last_activity_at,
+                        s.active_time_ms,
+                        s.tokens.input,
+                        s.tokens.output,
+                        s.tokens.cache_write,
+                        s.tokens.cache_read,
+                        path
+                    ],
                 )?;
             }
             tx.execute(
