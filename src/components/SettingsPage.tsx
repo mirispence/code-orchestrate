@@ -1,8 +1,10 @@
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
+import { ClaudeCodeSettings } from "@/components/ClaudeCodeSettings";
 import { CustomTerminalSetting } from "@/components/CustomTerminalSetting";
+import { DismissedPaths } from "@/components/DismissedPaths";
 import { Button } from "@/components/ui/button";
-import type { SettingKey, SettingValues } from "@/lib/api";
+import { api, type SettingKey, type SettingValues } from "@/lib/api";
 import type { SettingsState } from "@/lib/useSettings";
 import { cn } from "@/lib/utils";
 
@@ -10,14 +12,17 @@ type SettingsPageProps = {
   settings: SettingsState;
   /** Leave the page (Esc). */
   onClose: () => void;
+  /** A dismissed path was restored, so Suggestions may have changed. */
+  onRestored?: () => void;
 };
 
 /**
  * Settings in the detail pane: one scrolling page, autosaved (spec §9.1).
  * To add a setting, add a row to a `SettingsSection` (or a new section).
  */
-export function SettingsPage({ settings, onClose }: SettingsPageProps) {
+export function SettingsPage({ settings, onClose, onRestored }: SettingsPageProps) {
   const { snapshot, error, change, reset } = settings;
+  const [dataError, setDataError] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -101,6 +106,34 @@ export function SettingsPage({ settings, onClose }: SettingsPageProps) {
           />
         )}
         {preset === "custom" && <CustomTerminalSetting {...row("terminal.custom")} />}
+      </SettingsSection>
+
+      <SettingsSection title="Agents › Claude Code">
+        <ClaudeCodeSettings
+          executable={row("agents.claude-code.executable")}
+          transcriptRoot={row("agents.claude-code.transcriptRoot")}
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Suggestions">
+        <DismissedPaths onRestored={onRestored} />
+      </SettingsSection>
+
+      <SettingsSection title="Data">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => void api.rescanTranscripts()}>
+            Rescan transcripts
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() =>
+              void api.openDataFolder().then((r) => setDataError(r.ok ? null : r.error.message))
+            }
+          >
+            Open data folder
+          </Button>
+        </div>
+        {dataError !== null && <p className="text-xs text-destructive">{dataError}</p>}
       </SettingsSection>
     </div>
   );

@@ -60,6 +60,10 @@ export type SettingValues = {
   "terminal.windowsTerminal.target": "newWindow" | "newTab";
   /** The custom argv template; must contain `{command}` as an argument. */
   "terminal.custom": string[] | null;
+  /** Blank: `claude` on PATH (spec §5.3). */
+  "agents.claude-code.executable": string;
+  /** Blank: `CLAUDE_CONFIG_DIR`, else `~/.claude` (spec §5.3). */
+  "agents.claude-code.transcriptRoot": string;
 };
 
 export type SettingKey = keyof SettingValues;
@@ -90,6 +94,16 @@ export type AgentStatus = {
   capabilities: Capabilities;
   /** The resolved executable, or `null` when it is not found. */
   executable: string | null;
+};
+
+/** Settings › Agents › Claude Code status lines (spec §9.3). */
+export type ClaudeCodeStatus = {
+  executable: { state: "found"; path: string; version: string | null } | { state: "notFound" };
+  transcriptRoot:
+    | { state: "ok"; path: string }
+    | { state: "noProjects"; path: string }
+    /** An empty path: no home folder is known. */
+    | { state: "notFound"; path: string };
 };
 
 export type LaunchMode = "new" | "continue";
@@ -206,6 +220,36 @@ export const api = {
   /** Settings › Terminal › Test: run `claude --version` in the home directory through the template. */
   testTerminal(template: string[]): Promise<Result<void, LaunchError>> {
     return call("test_terminal", { template });
+  },
+
+  /**
+   * The Claude Code status lines. The executable's `--version` probe is
+   * cached; `refresh` re-probes it (an override change always re-probes).
+   */
+  async claudeCodeStatus(refresh: boolean): Promise<ClaudeCodeStatus> {
+    const result = await call<ClaudeCodeStatus, CommandError>("claude_code_status", { refresh });
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  },
+
+  /** Settings › Suggestions: the dismissed paths, oldest first. */
+  listDismissedPaths(): Promise<Result<string[], CommandError>> {
+    return call("list_dismissed_paths");
+  },
+
+  /** Un-dismiss a path so it can reappear as a Suggestion. */
+  restoreDismissedPath(path: string): Promise<Result<null, WorkspaceError>> {
+    return call("restore_dismissed_path", { path });
+  },
+
+  /** Re-parse every transcript on disk; progress arrives through `onScanState`. */
+  async rescanTranscripts(): Promise<void> {
+    await call("rescan_transcripts");
+  },
+
+  /** Show the app data folder in the system file manager. */
+  openDataFolder(): Promise<Result<null, CommandError>> {
+    return call("open_data_folder");
   },
 
   /** Native folder picker; `null` when cancelled. */
