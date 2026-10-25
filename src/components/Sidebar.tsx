@@ -1,6 +1,7 @@
 import { Inbox, Plus, RefreshCw, Settings, Star } from "lucide-react";
 import { useState } from "react";
 
+import { MissingBadge } from "@/components/MissingBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Workspace } from "@/lib/api";
@@ -163,15 +164,17 @@ function WorkspaceList({
             <button
               type="button"
               aria-current={ws.id === selectedId ? "true" : undefined}
-              title={ws.path}
+              title={ws.missing ? `Folder not found: ${ws.path}` : ws.path}
               onClick={() => onSelect(ws.id)}
               className={cn(
                 "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent",
                 ws.id === selectedId && "bg-sidebar-accent font-medium",
+                ws.missing && "text-muted-foreground",
               )}
             >
               <span className="truncate">{ws.name}</span>
               {ws.pinned && <Star aria-label="Pinned" className="size-3.5 shrink-0 fill-brand text-brand" />}
+              {ws.missing && <MissingBadge className="ml-auto" />}
             </button>
           </li>
         ))}

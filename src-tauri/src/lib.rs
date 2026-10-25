@@ -50,6 +50,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_workspaces,
             commands::add_workspace,
+            commands::repoint_workspace,
+            commands::remove_former_path,
             commands::update_workspace,
             commands::set_workspace_pinned,
             commands::remove_workspace,

@@ -12,6 +12,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
     api: {
       listWorkspaces: vi.fn(),
       addWorkspace: vi.fn(),
+      repointWorkspace: vi.fn(),
+      removeFormerPath: vi.fn(),
       pickFolder: vi.fn(),
       updateWorkspace: vi.fn(),
       setPinned: vi.fn(),
@@ -41,6 +43,8 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     note: null,
     createdAt: 1_700_000_000_000,
     tags: [],
+    formerPaths: [],
+    missing: false,
     ...overrides,
   };
 }
@@ -124,7 +128,7 @@ describe("Add Workspace", () => {
   it("picks a folder, pre-fills the name from its last segment, and lists the new Workspace", async () => {
     mocked.pickFolder.mockResolvedValue("E:\\Programming\\my-project\\");
     const added = workspace({ id: 9, name: "My Project", path: "E:\\Programming\\my-project" });
-    mocked.addWorkspace.mockResolvedValue({ ok: true, value: added });
+    mocked.addWorkspace.mockResolvedValue({ ok: true, value: { workspace: added, movedFrom: null } });
     const user = userEvent.setup();
     render(<App />);
 
