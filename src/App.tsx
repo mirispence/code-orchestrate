@@ -8,7 +8,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SuggestionsInbox } from "@/components/SuggestionsInbox";
 import { WorkspaceDetail } from "@/components/WorkspaceDetail";
 import { Button } from "@/components/ui/button";
-import { api, type Suggestion, type Workspace } from "@/lib/api";
+import { api, type Suggestion, type Workspace, type WorkspaceStats } from "@/lib/api";
 import { tagsInUse } from "@/lib/tags";
 import { useScan } from "@/lib/useScan";
 import { useSettings } from "@/lib/useSettings";
@@ -16,6 +16,7 @@ import { useSettings } from "@/lib/useSettings";
 export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [stats, setStats] = useState<ReadonlyMap<number, WorkspaceStats>>(new Map());
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pickedPath, setPickedPath] = useState<string | null>(null);
@@ -41,11 +42,12 @@ export default function App() {
   const reload = useCallback(async () => {
     const id = ++reloadsSent.current;
     try {
-      const [ws, sg] = await Promise.all([api.listWorkspaces(), api.listSuggestions()]);
+      const [ws, sg, st] = await Promise.all([api.listWorkspaces(), api.listSuggestions(), api.workspaceStats()]);
       if (id < reloadApplied.current) return;
       reloadApplied.current = id;
       setWorkspaces(ws);
       setSuggestions(sg);
+      setStats(new Map(st.map((s) => [s.workspaceId, s])));
       setLoadError(null);
     } catch (e) {
       if (id < reloadApplied.current) return;
@@ -101,6 +103,7 @@ export default function App() {
     <div className="flex h-full">
       <Sidebar
         workspaces={workspaces}
+        stats={stats}
         selectedId={selectedId}
         onSelectWorkspace={selectWorkspace}
         onAddWorkspace={addWorkspace}
@@ -136,6 +139,7 @@ export default function App() {
         ) : selected ? (
           <WorkspaceDetail
             workspace={selected}
+            stats={stats.get(selected.id) ?? null}
             onEdit={() => setEditingId(selected.id)}
             onTogglePin={() => void togglePin(selected)}
             onOpenSettings={openSettings}

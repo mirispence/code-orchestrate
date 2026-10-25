@@ -11,6 +11,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     ...actual,
     api: {
       listWorkspaces: vi.fn(),
+      workspaceStats: vi.fn(),
       addWorkspace: vi.fn(),
       pickFolder: vi.fn(),
       updateWorkspace: vi.fn(),
@@ -57,6 +58,7 @@ async function clickAddWorkspace(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([]);
+  mocked.workspaceStats.mockResolvedValue([]);
   mocked.listSuggestions.mockResolvedValue([]);
   mocked.scanRunning.mockResolvedValue(false);
   mocked.onScanState.mockResolvedValue(() => {});
@@ -270,7 +272,7 @@ describe("Search and tag chips", () => {
   const listed = () =>
     within(screen.getByRole("complementary"))
       .queryAllByRole("listitem")
-      .map((li) => li.textContent?.replace("Pinned", "").trim());
+      .map((li) => within(li).getByRole("button").getAttribute("data-workspace-name"));
 
   beforeEach(() => {
     mocked.listWorkspaces.mockResolvedValue([

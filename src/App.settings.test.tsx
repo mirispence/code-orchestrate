@@ -11,6 +11,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     ...actual,
     api: {
       listWorkspaces: vi.fn(),
+      workspaceStats: vi.fn(),
       addWorkspace: vi.fn(),
       pickFolder: vi.fn(),
       getSettings: vi.fn(),
@@ -63,6 +64,7 @@ function themeGroup() {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([ws]);
+  mocked.workspaceStats.mockResolvedValue([]);
   mocked.listSuggestions.mockResolvedValue([]);
   mocked.scanRunning.mockResolvedValue(false);
   mocked.onScanState.mockResolvedValue(() => {});

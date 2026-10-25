@@ -38,6 +38,39 @@ export type Suggestion = {
   missing: boolean;
 };
 
+/** Token counts by kind; `null` = the Agent does not report it (shown as "—"). */
+export type TokenUsage = {
+  input: number | null;
+  output: number | null;
+  cacheWrite: number | null;
+  cacheRead: number | null;
+};
+
+/** One Workspace's all-time totals over its attributed Sessions (spec §5.6). */
+export type WorkspaceStats = {
+  workspaceId: number;
+  sessionCount: number;
+  /** Newest last activity, Unix epoch milliseconds; `null` with no Sessions. */
+  lastUsed: number | null;
+  sessionTimeMs: number | null;
+  tokens: TokenUsage;
+};
+
+/** A stored Session (spec §4.2). Times are Unix epoch milliseconds. */
+export type Session = {
+  agentId: string;
+  sessionId: string;
+  /** Normalised working directory of the first record. */
+  firstCwd: string;
+  title: string | null;
+  startedAt: number | null;
+  lastActivityAt: number | null;
+  activeTimeMs: number | null;
+  tokens: TokenUsage;
+  /** The transcript file it was parsed from. */
+  sourcePath: string;
+};
+
 /** Every command error carries a `kind` and a human-readable `message`. */
 export type CommandError = { kind: "internal"; message: string };
 
@@ -180,6 +213,18 @@ export const api = {
     const result = await call<Suggestion[], CommandError>("list_suggestions");
     if (!result.ok) throw new Error(result.error.message);
     return result.value;
+  },
+
+  /** Every Workspace's stats, computed from stored Sessions. Throws on an internal error. */
+  async workspaceStats(): Promise<WorkspaceStats[]> {
+    const result = await call<WorkspaceStats[], CommandError>("workspace_stats");
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  },
+
+  /** A Workspace's Sessions, newest last activity first. */
+  listWorkspaceSessions(workspaceId: number): Promise<Result<Session[], CommandError>> {
+    return call("list_workspace_sessions", { workspaceId });
   },
 
   /** Hide a Suggestion's path permanently (spec §6.6). */
