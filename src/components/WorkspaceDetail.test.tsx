@@ -82,6 +82,51 @@ describe("Launching from a Workspace", () => {
     expect(screen.getByRole("button", { name: "Continue last" })).toHaveAccessibleDescription(hint);
   });
 
+  it("enables the buttons once Claude Code is found on a reload of the same Workspace", async () => {
+    mocked.agentStatus.mockResolvedValue(status({ executable: null }));
+    const props = {
+      onEdit: vi.fn(),
+      onTogglePin: vi.fn(),
+      onOpenSettings: vi.fn(),
+      onLocate: vi.fn(),
+      onFoundMissing: vi.fn(),
+    };
+    const { rerender } = render(<WorkspaceDetail workspace={ws} {...props} />);
+    await waitFor(() => expect(mocked.agentStatus).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "New Session" })).toBeDisabled();
+
+    mocked.agentStatus.mockResolvedValue(status());
+    rerender(<WorkspaceDetail workspace={{ ...ws }} {...props} />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "New Session" })).toBeEnabled());
+  });
+
+  it("enables the buttons once Claude Code is found when the window regains focus", async () => {
+    mocked.agentStatus.mockResolvedValue(status({ executable: null }));
+    renderDetail();
+    await waitFor(() => expect(mocked.agentStatus).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "New Session" })).toBeDisabled();
+
+    mocked.agentStatus.mockResolvedValue(status());
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "New Session" })).toBeEnabled());
+  });
+
+  it("applies only the newest of overlapping status checks", async () => {
+    let resolveFirst: (s: AgentStatus) => void = () => {};
+    mocked.agentStatus.mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)));
+    mocked.agentStatus.mockResolvedValueOnce(status());
+    renderDetail();
+
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "New Session" })).toBeEnabled());
+    resolveFirst(status({ executable: null }));
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByRole("button", { name: "New Session" })).toBeEnabled();
+  });
+
   it("hides Continue last when the Agent cannot continue", async () => {
     mocked.agentStatus.mockResolvedValue(
       status({ capabilities: { continue: false, resume: true, sessionHistory: true } }),
