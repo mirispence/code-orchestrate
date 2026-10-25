@@ -2,12 +2,15 @@
 //! what to run; this module decides how it reaches a terminal window.
 
 use std::io;
+use std::path::Path;
 
 use serde::Serialize;
 use serde::ser::{SerializeMap, Serializer};
 
 use crate::agents::{AgentAdapter, LaunchCommand, LaunchCommandError, LaunchMode};
-use crate::store::Store;
+use crate::attribution;
+use crate::paths::NormalizedPath;
+use crate::store::{Store, Workspace};
 
 /// Why a launch failed. Serialises for the UI as `{ kind, message, ...fields }`.
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
@@ -19,6 +22,12 @@ pub enum LaunchError {
     /// The Workspace's directory is gone (spec §6.4). The app never creates it.
     #[error("Folder not found: {path}. Locate it to launch here.")]
     WorkspaceMissing { workspace_id: i64, path: String },
+    /// The Session is not one of this Workspace's.
+    #[error("Session {session_id} was not found")]
+    SessionNotFound { session_id: String },
+    /// The Session's transcript file is gone, so the Agent cannot resume it.
+    #[error("Transcript deleted: Session {session_id} can no longer be resumed")]
+    TranscriptDeleted { session_id: String },
     #[error("Could not start {program}: {os_error}")]
     SpawnFailed { program: String, os_error: String },
     /// The chosen terminal preset cannot be used as configured.
@@ -43,6 +52,8 @@ impl Serialize for LaunchError {
             Self::ExecutableNotFound { .. } => "executableNotFound",
             Self::WorkspaceNotFound { .. } => "workspaceNotFound",
             Self::WorkspaceMissing { .. } => "workspaceMissing",
+            Self::SessionNotFound { .. } => "sessionNotFound",
+            Self::TranscriptDeleted { .. } => "transcriptDeleted",
             Self::SpawnFailed { .. } => "spawnFailed",
             Self::TerminalNotConfigured { .. } => "terminalNotConfigured",
             Self::Internal(_) => "internal",
@@ -56,6 +67,7 @@ impl Serialize for LaunchError {
                 map.serialize_entry("workspaceId", workspace_id)?;
                 map.serialize_entry("path", path)?;
             }
+            Self::SessionNotFound { session_id } | Self::TranscriptDeleted { session_id } => map.serialize_entry("sessionId", session_id)?,
             Self::SpawnFailed { program, os_error } => {
                 map.serialize_entry("program", program)?;
                 map.serialize_entry("osError", os_error)?;
@@ -106,8 +118,30 @@ pub fn launch_session(
     if workspace.missing {
         return Err(LaunchError::WorkspaceMissing { workspace_id, path: workspace.path.to_string() });
     }
-    let command = agent.launch_command(&workspace.path, mode)?;
+    let cwd = match mode {
+        LaunchMode::Resume(session_id) => resume_cwd(store, &workspace, session_id)?,
+        LaunchMode::New | LaunchMode::Continue => workspace.path.clone(),
+    };
+    let command = agent.launch_command(&cwd, mode)?;
     spawn_in(&terminal, spawner, &command)
+}
+
+/// Where to resume a Session: its `first_cwd` if that folder still exists,
+/// else the Workspace path (spec §7.1).
+fn resume_cwd(store: &Store, workspace: &Workspace, session_id: &str) -> Result<NormalizedPath, LaunchError> {
+    let sessions = attribution::workspace_sessions(store, workspace.id).map_err(|e| LaunchError::Internal(e.to_string()))?;
+    let session = sessions
+        .into_iter()
+        .find(|s| s.session_id == session_id)
+        .ok_or_else(|| LaunchError::SessionNotFound { session_id: session_id.to_owned() })?;
+    if !session.transcript_exists {
+        return Err(LaunchError::TranscriptDeleted { session_id: session.session_id });
+    }
+    if Path::new(session.first_cwd.as_str()).is_dir() {
+        Ok(session.first_cwd)
+    } else {
+        Ok(workspace.path.clone())
+    }
 }
 
 /// Settings › Terminal › Test: run the Agent's version command (`claude

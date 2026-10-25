@@ -2,10 +2,11 @@ import { useEffect, useId, useState } from "react";
 import { Play, RotateCw, Star } from "lucide-react";
 
 import { ErrorToast } from "@/components/ErrorToast";
+import { ResumeTable } from "@/components/ResumeTable";
 import { StatTiles } from "@/components/StatTiles";
 import { TagList } from "@/components/TagList";
 import { Button } from "@/components/ui/button";
-import { api, type AgentStatus, type LaunchMode, type Workspace, type WorkspaceStats } from "@/lib/api";
+import { api, type AgentStatus, type LaunchMode, type Session, type Workspace, type WorkspaceStats } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type WorkspaceDetailProps = {
@@ -49,6 +50,8 @@ export function WorkspaceDetail({
   const [statusError, setStatusError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<{ workspaceId: number; list: Session[] } | null>(null);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const hintId = useId();
 
   // Resolved each time a Workspace is shown, so installing Claude Code is
@@ -69,6 +72,27 @@ export function WorkspaceDetail({
       current = false;
     };
   }, [workspace.id]);
+
+  // Re-read whenever the stats are (each reload after a scan or an edit).
+  useEffect(() => {
+    let current = true;
+    const workspaceId = workspace.id;
+    api.listWorkspaceSessions(workspaceId).then(
+      (result) => {
+        if (!current) return;
+        if (result.ok) {
+          setSessions({ workspaceId, list: result.value });
+          setSessionsError(null);
+        } else setSessionsError(result.error.message);
+      },
+      (e: unknown) => {
+        if (current) setSessionsError(e instanceof Error ? e.message : String(e));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [workspace.id, stats]);
 
   async function launch(mode: LaunchMode) {
     setLaunching(true);
@@ -138,6 +162,22 @@ export function WorkspaceDetail({
 
       {/* Hidden when the Agent keeps no Session history (spec §3.2). */}
       {agent?.capabilities.sessionHistory !== false && <StatTiles stats={stats ?? emptyStats(workspace.id)} />}
+
+      {agent?.capabilities.sessionHistory !== false && agent?.capabilities.resume !== false && (
+        <>
+          {sessionsError !== null && (
+            <p role="alert" className="text-sm text-destructive">
+              Could not load Sessions: {sessionsError}
+            </p>
+          )}
+          <ResumeTable
+            sessions={sessions?.workspaceId === workspace.id ? sessions.list : []}
+            canLaunch={canLaunch}
+            hintId={describedBy}
+            onResume={(sessionId) => void launch({ resume: sessionId })}
+          />
+        </>
+      )}
 
       {launchError !== null && (
         <ErrorToast

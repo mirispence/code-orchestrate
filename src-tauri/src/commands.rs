@@ -244,12 +244,14 @@ pub async fn claude_code_status(
     .map_err(InternalError::new)
 }
 
-/// How the UI asks to start a Session: `"new"` or `"continue"`.
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
+/// How the UI asks to start a Session: `"new"`, `"continue"`, or
+/// `{ "resume": "<session id>" }`.
+#[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionStart {
     New,
     Continue,
+    Resume(String),
 }
 
 /// The terminal chosen in Settings, read fresh so a hand edit applies at once.
@@ -269,6 +271,7 @@ pub async fn launch_session(
     let mode = match mode {
         SessionStart::New => LaunchMode::New,
         SessionStart::Continue => LaunchMode::Continue,
+        SessionStart::Resume(session_id) => LaunchMode::Resume(session_id),
     };
     let settings = Arc::clone(&settings);
     with_store(&store, LaunchError::Internal, move |s| {

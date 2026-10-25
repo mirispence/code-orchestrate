@@ -82,6 +82,8 @@ export type Session = {
   tokens: TokenUsage;
   /** The transcript file it was parsed from. */
   sourcePath: string;
+  /** Whether that file is still on disk; when not, the Session cannot be resumed. */
+  transcriptExists: boolean;
 };
 
 /** Every command error carries a `kind` and a human-readable `message`. */
@@ -153,12 +155,15 @@ export type ClaudeCodeStatus = {
     | { state: "notFound"; path: string };
 };
 
-export type LaunchMode = "new" | "continue";
+/** New, Continue last, or Resume a past Session by its id (spec §7.1). */
+export type LaunchMode = "new" | "continue" | { resume: string };
 
 export type LaunchError =
   | { kind: "executableNotFound"; message: string; name: string }
   | { kind: "workspaceNotFound"; message: string; workspaceId: number }
   | { kind: "workspaceMissing"; message: string; workspaceId: number; path: string }
+  | { kind: "sessionNotFound"; message: string; sessionId: string }
+  | { kind: "transcriptDeleted"; message: string; sessionId: string }
   | { kind: "spawnFailed"; message: string; program: string; osError: string }
   | { kind: "terminalNotConfigured"; message: string }
   | CommandError;

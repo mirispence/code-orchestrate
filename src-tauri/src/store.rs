@@ -143,6 +143,9 @@ pub struct Session {
     /// Each field `None` when the Agent does not report it.
     pub tokens: TokenUsage,
     pub source_path: String,
+    /// Whether the transcript is still on disk, checked as the record is read.
+    /// When it is gone the Session keeps its stats but cannot be resumed.
+    pub transcript_exists: bool,
 }
 
 /// What one scanned transcript yielded: its source key and, if it holds a
@@ -403,6 +406,7 @@ impl Store {
              FROM session ORDER BY agent_id, session_id",
         )?;
         let rows = stmt.query_map([], |r| {
+            let source_path: String = r.get(11)?;
             Ok(Session {
                 agent_id: r.get(0)?,
                 session_id: r.get(1)?,
@@ -417,7 +421,8 @@ impl Store {
                     cache_write: r.get(9)?,
                     cache_read: r.get(10)?,
                 },
-                source_path: r.get(11)?,
+                transcript_exists: std::path::Path::new(&source_path).exists(),
+                source_path,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
