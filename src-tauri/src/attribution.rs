@@ -112,10 +112,9 @@ pub fn workspace_stats(store: &Store) -> Result<Vec<WorkspaceStats>, StoreError>
 
 /// The Sessions attributed to a Workspace, newest last activity first.
 pub fn workspace_sessions(store: &Store, workspace_id: i64) -> Result<Vec<Session>, StoreError> {
+    store.get_workspace(workspace_id)?;
+    // All of them: a Session belongs to its deepest matching Workspace.
     let workspaces = store.list_workspaces()?;
-    if !workspaces.iter().any(|w| w.id == workspace_id) {
-        return Err(StoreError::NoSuchWorkspace(workspace_id));
-    }
     let mut sessions: Vec<Session> = store
         .list_sessions()?
         .into_iter()

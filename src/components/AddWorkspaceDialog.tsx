@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { AddWorkspaceErrorText } from "@/components/AddWorkspaceErrorText";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -79,21 +80,7 @@ function AddWorkspaceForm({
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          {error.kind === "pathTaken" ? (
-            <>
-              Already a Workspace:{" "}
-              <Button
-                type="button"
-                variant="link"
-                className="h-auto p-0 text-destructive underline"
-                onClick={() => onShowWorkspace(error.workspaceId)}
-              >
-                {error.workspaceName}
-              </Button>
-            </>
-          ) : (
-            error.message
-          )}
+          <AddWorkspaceErrorText error={error} onShowWorkspace={onShowWorkspace} />
         </p>
       )}
       <DialogFooter>

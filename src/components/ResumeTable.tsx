@@ -15,7 +15,8 @@ type ResumeTableProps = {
   canLaunch: boolean;
   /** Why launching is blocked, shown as the buttons' description; `hintId` names it. */
   hintId?: string;
-  onResume: (sessionId: string) => void;
+  /** Absent when the Agent cannot resume: the table lists Sessions without the Resume column (spec §3.2). */
+  onResume?: (sessionId: string) => void;
 };
 
 /** "Resume a past Session" (spec §8.2): every Session, no pagination. */
@@ -24,7 +25,7 @@ export function ResumeTable({ sessions, canLaunch, hintId, onResume }: ResumeTab
 
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-base font-semibold">Resume a past Session</h3>
+      <h3 className="text-base font-semibold">{onResume ? "Resume a past Session" : "Sessions"}</h3>
       {sessions.length === 0 ? (
         <p className="text-sm text-muted-foreground">No Sessions yet.</p>
       ) : (
@@ -37,9 +38,11 @@ export function ResumeTable({ sessions, canLaunch, hintId, onResume }: ResumeTab
                 <th className="px-3 py-2 font-medium">Started</th>
                 <th className="px-3 py-2 font-medium">Active time</th>
                 <th className="px-3 py-2 font-medium">Tokens</th>
-                <th className="px-3 py-2">
-                  <span className="sr-only">Resume</span>
-                </th>
+                {onResume && (
+                  <th className="px-3 py-2">
+                    <span className="sr-only">Resume</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -56,21 +59,23 @@ export function ResumeTable({ sessions, canLaunch, hintId, onResume }: ResumeTab
                     <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatWhen(s.startedAt)}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatDuration(s.activeTimeMs)}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatTokens(headlineTokens(s.tokens))}</td>
-                    <td className="px-3 py-2 text-right">
-                      {/* A disabled button gets no hover events, so the tooltip sits on a wrapper. */}
-                      <span className="inline-block" title={deleted ? TRANSCRIPT_DELETED : undefined}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={deleted || !canLaunch}
-                          aria-describedby={deleted ? deletedId : hintId}
-                          onClick={() => onResume(s.sessionId)}
-                        >
-                          <History />
-                          Resume
-                        </Button>
-                      </span>
-                    </td>
+                    {onResume && (
+                      <td className="px-3 py-2 text-right">
+                        {/* A disabled button gets no hover events, so the tooltip sits on a wrapper. */}
+                        <span className="inline-block" title={deleted ? TRANSCRIPT_DELETED : undefined}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={deleted || !canLaunch}
+                            aria-describedby={deleted ? deletedId : hintId}
+                            onClick={() => onResume(s.sessionId)}
+                          >
+                            <History />
+                            Resume
+                          </Button>
+                        </span>
+                      </td>
+                    )}
                   </tr>
                 );
               })}

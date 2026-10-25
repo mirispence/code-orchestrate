@@ -163,7 +163,8 @@ export function WorkspaceDetail({
       {/* Hidden when the Agent keeps no Session history (spec §3.2). */}
       {agent?.capabilities.sessionHistory !== false && <StatTiles stats={stats ?? emptyStats(workspace.id)} />}
 
-      {agent?.capabilities.sessionHistory !== false && agent?.capabilities.resume !== false && (
+      {/* Without resume the Sessions still list, just with no Resume column (spec §3.2). */}
+      {agent?.capabilities.sessionHistory !== false && (
         <>
           {sessionsError !== null && (
             <p role="alert" className="text-sm text-destructive">
@@ -174,7 +175,9 @@ export function WorkspaceDetail({
             sessions={sessions?.workspaceId === workspace.id ? sessions.list : []}
             canLaunch={canLaunch}
             hintId={describedBy}
-            onResume={(sessionId) => void launch({ resume: sessionId })}
+            onResume={
+              agent?.capabilities.resume === false ? undefined : (sessionId) => void launch({ resume: sessionId })
+            }
           />
         </>
       )}

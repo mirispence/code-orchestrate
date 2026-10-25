@@ -304,3 +304,15 @@ fn editing_an_unknown_workspace_fails() {
     let store = Store::open(&f.db).unwrap();
     assert!(matches!(store.update_workspace(99, edit("X", None, &[])), Err(StoreError::NoSuchWorkspace(99))));
 }
+
+#[test]
+fn one_workspace_is_read_by_id_as_listed() {
+    let f = fixture();
+    let store = Store::open(&f.db).unwrap();
+    let ws = store.add_workspace(new_ws("A", CODE)).unwrap();
+    store.update_workspace(ws.id, edit("A", Some("n"), &["t"])).unwrap();
+
+    let listed = store.list_workspaces().unwrap().remove(0);
+    assert_eq!(store.get_workspace(ws.id).unwrap(), listed);
+    assert!(matches!(store.get_workspace(99), Err(StoreError::NoSuchWorkspace(99))));
+}

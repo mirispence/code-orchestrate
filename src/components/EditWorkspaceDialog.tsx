@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useId, useState } from "react";
 
+import { AddWorkspaceErrorText } from "@/components/AddWorkspaceErrorText";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type Saved, type Workspace } from "@/lib/api";
+import { api, type AddWorkspaceError, type Saved, type Workspace } from "@/lib/api";
 import { addTag, tagKey } from "@/lib/tags";
 
 type EditWorkspaceDialogProps = {
@@ -24,9 +25,11 @@ type EditWorkspaceDialogProps = {
   /** `movedFrom` is set when the new path was taken off another Workspace's former paths. */
   onSaved: (saved: Saved) => void;
   onRemoved: (id: number) => void;
+  /** Jump to the Workspace that already owns a rejected path. */
+  onShowWorkspace: (id: number) => void;
 };
 
-/** Edit dialog: name, path, tags, note, former paths and Remove Workspace (spec §8.2, §6.2). */
+/** Edit dialog: name, path, pinned, tags, note, former paths and Remove Workspace (spec §8.2, §6.2). */
 export function EditWorkspaceDialog({ workspace, onClose, ...rest }: EditWorkspaceDialogProps) {
   return (
     <Dialog open={workspace !== null} onOpenChange={(open) => !open && onClose()}>
@@ -46,15 +49,17 @@ function EditWorkspaceForm({
   tagsInUse,
   onSaved,
   onRemoved,
+  onShowWorkspace,
 }: { workspace: Workspace } & Omit<EditWorkspaceDialogProps, "workspace" | "onClose">) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [name, setName] = useState(workspace.name);
   const [note, setNote] = useState(workspace.note ?? "");
   const [tags, setTags] = useState(workspace.tags);
   const [draftTag, setDraftTag] = useState("");
+  const [pinned, setPinned] = useState(workspace.pinned);
   const [path, setPath] = useState(workspace.path);
   const [formerPaths, setFormerPaths] = useState(workspace.formerPaths);
-  const [error, setError] = useState<{ message: string } | null>(null);
+  const [error, setError] = useState<AddWorkspaceError | null>(null);
   const [saving, setSaving] = useState(false);
   const suggestionsId = useId();
   const formerPathsId = useId();
@@ -87,6 +92,10 @@ function EditWorkspaceForm({
       }
       for (const removed of workspace.formerPaths.filter((p) => !formerPaths.includes(p))) {
         const result = await api.removeFormerPath(workspace.id, removed);
+        if (!result.ok) return setError(result.error);
+      }
+      if (pinned !== workspace.pinned) {
+        const result = await api.setPinned(workspace.id, pinned);
         if (!result.ok) return setError(result.error);
       }
       const result = await api.updateWorkspace(workspace.id, {
@@ -169,6 +178,16 @@ function EditWorkspaceForm({
           </Button>
         </div>
       </div>
+      <div className="flex items-center gap-2">
+        <input
+          id="edit-workspace-pinned"
+          type="checkbox"
+          className="size-4 accent-brand"
+          checked={pinned}
+          onChange={(e) => setPinned(e.target.checked)}
+        />
+        <Label htmlFor="edit-workspace-pinned">Pinned</Label>
+      </div>
       {formerPaths.length > 0 && (
         <div className="grid gap-2">
           <span id={formerPathsId} className="text-sm font-medium">
@@ -245,7 +264,7 @@ function EditWorkspaceForm({
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          {error.message}
+          <AddWorkspaceErrorText error={error} onShowWorkspace={onShowWorkspace} />
         </p>
       )}
       <DialogFooter className="sm:justify-between">

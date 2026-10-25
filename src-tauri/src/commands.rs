@@ -2,7 +2,7 @@
 //! shared store to the domain modules on a blocking worker thread, so slow
 //! filesystem or SQLite work never runs on (and freezes) the main thread.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -32,6 +32,22 @@ impl InternalError {
     }
 }
 
+/// Lock shared state, carrying on past a panic in an earlier holder: the
+/// store's transactions roll back on unwind and the settings handle is just a
+/// path, so neither is left half-changed.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Run `work` on a blocking worker thread, so slow filesystem or SQLite work
+/// never runs on the main thread. A worker that panics becomes `internal`.
+async fn blocking<R: Send + 'static, E>(
+    internal: impl FnOnce(String) -> E,
+    work: impl FnOnce() -> R + Send + 'static,
+) -> Result<R, E> {
+    tauri::async_runtime::spawn_blocking(work).await.map_err(|e| internal(e.to_string()))
+}
+
 /// Run `work` with the locked store on a blocking worker thread.
 async fn with_store<T, E>(
     store: &AppStore,
@@ -43,16 +59,7 @@ where
     E: Send + 'static,
 {
     let store = Arc::clone(store);
-    let joined = tauri::async_runtime::spawn_blocking(move || {
-        let guard = store.lock().map_err(|e| e.to_string());
-        guard.map(|s| work(&s))
-    })
-    .await;
-    match joined {
-        Ok(Ok(result)) => result,
-        Ok(Err(poisoned)) => Err(internal(poisoned)),
-        Err(join) => Err(internal(join.to_string())),
-    }
+    blocking(internal, move || work(&lock(&store))).await?
 }
 
 #[tauri::command]
@@ -132,15 +139,14 @@ async fn with_settings(
 ) -> Result<Snapshot, SettingsError> {
     let settings = Arc::clone(settings);
     let app = app.clone();
-    let internal = |e: String| SettingsError::Internal { message: e };
-    tauri::async_runtime::spawn_blocking(move || {
-        let file = settings.lock().map_err(|e| internal(e.to_string()))?;
+    let internal = |message| SettingsError::Internal { message };
+    blocking(internal, move || {
+        let file = lock(&settings);
         let snapshot = work(&file)?;
         apply_settings(&app, &snapshot);
         Ok(snapshot)
     })
-    .await
-    .map_err(|e| internal(e.to_string()))?
+    .await?
 }
 
 /// Make the running app reflect `snapshot`. The webview follows the window
@@ -184,19 +190,14 @@ pub async fn reset_settings(
 /// The v1 Agent with the overrides in Settings (spec §5.3). Built per call,
 /// from settings.json read fresh, so its executable is re-resolved every time.
 fn agent(settings: &AppSettings) -> ClaudeCode {
-    match settings.lock() {
-        Ok(file) => file.load().claude_code(),
-        Err(poisoned) => poisoned.into_inner().load().claude_code(),
-    }
+    lock(settings).load().claude_code()
 }
 
 /// The Agent's identity, capabilities and resolved executable (or `null`).
 #[tauri::command]
 pub async fn agent_status(settings: State<'_, AppSettings>) -> Result<AgentStatus, InternalError> {
     let settings = Arc::clone(&settings);
-    tauri::async_runtime::spawn_blocking(move || agents::agent_status(&agent(&settings)))
-        .await
-        .map_err(InternalError::new)
+    blocking(InternalError::new, move || agents::agent_status(&agent(&settings))).await
 }
 
 /// The last `--version` probe, keyed by the executable override it ran with
@@ -217,14 +218,14 @@ pub fn probe_executable(settings: &AppSettings, cache: &ExecutableProbe, refresh
     let agent = agent(settings);
     let key = agent.executable_override();
     if !refresh {
-        if let Some((cached_key, status)) = cache.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Some((cached_key, status)) = lock(cache).as_ref() {
             if *cached_key == key {
                 return status.clone();
             }
         }
     }
     let status = agent.executable_status();
-    *cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, status.clone()));
+    *lock(cache) = Some((key, status.clone()));
     status
 }
 
@@ -236,28 +237,16 @@ pub async fn claude_code_status(
 ) -> Result<ClaudeCodeStatus, InternalError> {
     let settings = Arc::clone(&settings);
     let probe = Arc::clone(&probe);
-    tauri::async_runtime::spawn_blocking(move || ClaudeCodeStatus {
+    blocking(InternalError::new, move || ClaudeCodeStatus {
         executable: probe_executable(&settings, &probe, refresh),
         transcript_root: agent(&settings).transcript_root_status(),
     })
     .await
-    .map_err(InternalError::new)
-}
-
-/// How the UI asks to start a Session: `"new"`, `"continue"`, or
-/// `{ "resume": "<session id>" }`.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SessionStart {
-    New,
-    Continue,
-    Resume(String),
 }
 
 /// The terminal chosen in Settings, read fresh so a hand edit applies at once.
 fn configured(settings: &AppSettings) -> Result<(Terminal, ClaudeCode), LaunchError> {
-    let file = settings.lock().map_err(|e| LaunchError::Internal(e.to_string()))?;
-    let snapshot = file.load();
+    let snapshot = lock(settings).load();
     Ok((snapshot.terminal()?, snapshot.claude_code()))
 }
 
@@ -266,13 +255,8 @@ pub async fn launch_session(
     store: State<'_, AppStore>,
     settings: State<'_, AppSettings>,
     workspace_id: i64,
-    mode: SessionStart,
+    mode: LaunchMode,
 ) -> Result<(), LaunchError> {
-    let mode = match mode {
-        SessionStart::New => LaunchMode::New,
-        SessionStart::Continue => LaunchMode::Continue,
-        SessionStart::Resume(session_id) => LaunchMode::Resume(session_id),
-    };
     let settings = Arc::clone(&settings);
     with_store(&store, LaunchError::Internal, move |s| {
         let (terminal, agent) = configured(&settings)?;
@@ -371,16 +355,7 @@ pub fn rescan_transcripts(scanner: State<'_, Scanner>) {
 #[tauri::command]
 pub async fn open_data_folder(app: AppHandle) -> Result<(), InternalError> {
     let dir = app.path().app_data_dir().map_err(InternalError::new)?;
-    let program = if cfg!(windows) {
-        "explorer"
-    } else if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    // Explorer exits non-zero even when it opens the folder, so only a
-    // failure to start counts.
-    std::process::Command::new(program).arg(&dir).spawn().map(drop).map_err(InternalError::new)
+    launch::open_folder(&OsSpawner, &dir.to_string_lossy()).map_err(InternalError::new)
 }
 
 /// Settings › Terminal › Test: run `claude --version` in the home directory
@@ -395,9 +370,8 @@ pub async fn test_terminal(
     let home = app.path().home_dir().map_err(|e| LaunchError::Internal(e.to_string()))?;
     let home = home.to_string_lossy().into_owned();
     let settings = Arc::clone(&settings);
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(LaunchError::Internal, move || {
         launch::test_terminal(&agent(&settings), &Terminal::Custom(template), &OsSpawner, &home)
     })
-    .await
-    .map_err(|e| LaunchError::Internal(e.to_string()))?
+    .await?
 }

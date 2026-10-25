@@ -31,28 +31,32 @@ struct Def {
 
 /// Every setting the app knows (spec §9.1).
 const DEFS: &[Def] = &[
-    Def { key: "theme", default: || json!("system"), check: check_theme, choices: THEMES },
-    Def { key: "terminal.preset", default: || json!(PRESETS[0]), check: check_preset, choices: PRESETS },
-    Def {
-        key: "terminal.windowsTerminal.target",
-        default: || json!("newWindow"),
-        check: check_wt_target,
-        choices: WT_TARGETS,
-    },
-    Def { key: "terminal.custom", default: || Value::Null, check: check_custom, choices: &[] },
+    Def { key: THEME_KEY, default: || json!(Theme::System.name()), check: check_theme, choices: THEMES },
+    Def { key: PRESET_KEY, default: || json!(PRESETS[0]), check: check_preset, choices: PRESETS },
+    Def { key: WT_TARGET_KEY, default: || json!(WT_TARGETS[0]), check: check_wt_target, choices: WT_TARGETS },
+    Def { key: CUSTOM_TERMINAL_KEY, default: || Value::Null, check: check_custom, choices: &[] },
     // Blank means the default: `claude` on PATH, and CLAUDE_CONFIG_DIR else ~/.claude (spec §5.3).
     Def { key: EXECUTABLE_KEY, default: || json!(""), check: check_text, choices: &[] },
     Def { key: TRANSCRIPT_ROOT_KEY, default: || json!(""), check: check_text, choices: &[] },
 ];
 
+/// Settings › Appearance › Theme.
+pub const THEME_KEY: &str = "theme";
+/// Settings › Terminal › preset.
+pub const PRESET_KEY: &str = "terminal.preset";
+/// Settings › Terminal › Windows Terminal opens a new window or a new tab.
+pub const WT_TARGET_KEY: &str = "terminal.windowsTerminal.target";
+/// Settings › Terminal › Custom argv template.
+pub const CUSTOM_TERMINAL_KEY: &str = "terminal.custom";
 /// Settings › Agents › Claude Code › Executable path.
 pub const EXECUTABLE_KEY: &str = "agents.claude-code.executable";
 /// Settings › Agents › Claude Code › Transcript root.
 pub const TRANSCRIPT_ROOT_KEY: &str = "agents.claude-code.transcriptRoot";
 
-const THEMES: &[&str] = &["system", "light", "dark"];
+const THEMES: &[&str] = &[Theme::System.name(), Theme::Light.name(), Theme::Dark.name()];
 /// Non-Windows platforms offer only Custom in v1 (spec §7.2). The first is the default.
 const PRESETS: &[&str] = if cfg!(windows) { &["windowsTerminal", "console", "custom"] } else { &["custom"] };
+/// The first is the default.
 const WT_TARGETS: &[&str] = &["newWindow", "newTab"];
 
 fn check_theme(value: &Value) -> Result<(), String> {
@@ -112,6 +116,21 @@ pub enum Theme {
     Dark,
 }
 
+impl Theme {
+    /// Its value in `settings.json`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Theme::System => "system",
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+        }
+    }
+
+    fn parse(name: &str) -> Option<Theme> {
+        [Theme::System, Theme::Light, Theme::Dark].into_iter().find(|t| t.name() == name)
+    }
+}
+
 /// The effective settings, as the UI sees them.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,15 +151,15 @@ impl Snapshot {
     /// The terminal Sessions open in (spec §7.2).
     pub fn terminal(&self) -> Result<Terminal, LaunchError> {
         let value = |key: &str| self.values.get(key).cloned().unwrap_or(Value::Null);
-        match value("terminal.preset").as_str() {
+        match value(PRESET_KEY).as_str() {
             Some("console") => Ok(Terminal::ConsoleWindow),
-            Some("custom") => match custom_template(&value("terminal.custom")) {
+            Some("custom") => match custom_template(&value(CUSTOM_TERMINAL_KEY)) {
                 Ok(template) => Ok(Terminal::Custom(template)),
                 Err(_) => Err(LaunchError::TerminalNotConfigured {
                     message: "No custom terminal is set. Add a template in Settings › Terminal.".into(),
                 }),
             },
-            _ => Ok(match value("terminal.windowsTerminal.target").as_str() {
+            _ => Ok(match value(WT_TARGET_KEY).as_str() {
                 Some("newTab") => Terminal::WindowsTerminalNewTab,
                 _ => Terminal::WindowsTerminalNewWindow,
             }),
@@ -166,11 +185,7 @@ impl Snapshot {
     }
 
     pub fn theme(&self) -> Theme {
-        match self.values.get("theme").and_then(Value::as_str) {
-            Some("light") => Theme::Light,
-            Some("dark") => Theme::Dark,
-            _ => Theme::System,
-        }
+        self.values.get(THEME_KEY).and_then(Value::as_str).and_then(Theme::parse).unwrap_or(Theme::System)
     }
 }
 

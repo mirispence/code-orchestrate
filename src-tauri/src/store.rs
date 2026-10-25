@@ -485,7 +485,8 @@ impl Store {
         Ok(())
     }
 
-    fn get_workspace(&self, id: i64) -> Result<Workspace, StoreError> {
+    /// One Workspace by id, read as `list_workspaces` reads it.
+    pub fn get_workspace(&self, id: i64) -> Result<Workspace, StoreError> {
         let mut ws = self
             .conn
             .query_row(

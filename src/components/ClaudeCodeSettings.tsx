@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Input } from "@/components/ui/input";
-import { api, type ClaudeCodeStatus, type SettingValues } from "@/lib/api";
+import { api, type ClaudeCodeStatus, type SETTING, type SettingValues } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Row<K extends keyof SettingValues> = {
@@ -20,8 +20,8 @@ export function ClaudeCodeSettings({
   executable,
   transcriptRoot,
 }: {
-  executable: Row<"agents.claude-code.executable">;
-  transcriptRoot: Row<"agents.claude-code.transcriptRoot">;
+  executable: Row<typeof SETTING.executable>;
+  transcriptRoot: Row<typeof SETTING.transcriptRoot>;
 }) {
   const [status, setStatus] = useState<ClaudeCodeStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);

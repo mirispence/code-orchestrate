@@ -5,15 +5,16 @@ use std::io;
 use std::path::Path;
 
 use serde::Serialize;
-use serde::ser::{SerializeMap, Serializer};
 
 use crate::agents::{AgentAdapter, LaunchCommand, LaunchCommandError, LaunchMode};
 use crate::attribution;
 use crate::paths::NormalizedPath;
-use crate::store::{Store, Workspace};
+use crate::store::{Store, StoreError, Workspace};
+use crate::ui_error::ui_error;
 
 /// Why a launch failed. Serialises for the UI as `{ kind, message, ...fields }`.
-#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq, Serialize)]
+#[serde(remote = "Self", tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum LaunchError {
     #[error("{name} was not found")]
     ExecutableNotFound { name: String },
@@ -32,9 +33,12 @@ pub enum LaunchError {
     SpawnFailed { program: String, os_error: String },
     /// The chosen terminal preset cannot be used as configured.
     #[error("{message}")]
-    TerminalNotConfigured { message: String },
+    TerminalNotConfigured {
+        #[serde(skip)]
+        message: String,
+    },
     #[error("{0}")]
-    Internal(String),
+    Internal(#[serde(serialize_with = "crate::ui_error::omit")] String),
 }
 
 impl From<LaunchCommandError> for LaunchError {
@@ -45,38 +49,7 @@ impl From<LaunchCommandError> for LaunchError {
     }
 }
 
-impl Serialize for LaunchError {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(None)?;
-        let kind = match self {
-            Self::ExecutableNotFound { .. } => "executableNotFound",
-            Self::WorkspaceNotFound { .. } => "workspaceNotFound",
-            Self::WorkspaceMissing { .. } => "workspaceMissing",
-            Self::SessionNotFound { .. } => "sessionNotFound",
-            Self::TranscriptDeleted { .. } => "transcriptDeleted",
-            Self::SpawnFailed { .. } => "spawnFailed",
-            Self::TerminalNotConfigured { .. } => "terminalNotConfigured",
-            Self::Internal(_) => "internal",
-        };
-        map.serialize_entry("kind", kind)?;
-        map.serialize_entry("message", &self.to_string())?;
-        match self {
-            Self::ExecutableNotFound { name } => map.serialize_entry("name", name)?,
-            Self::WorkspaceNotFound { workspace_id } => map.serialize_entry("workspaceId", workspace_id)?,
-            Self::WorkspaceMissing { workspace_id, path } => {
-                map.serialize_entry("workspaceId", workspace_id)?;
-                map.serialize_entry("path", path)?;
-            }
-            Self::SessionNotFound { session_id } | Self::TranscriptDeleted { session_id } => map.serialize_entry("sessionId", session_id)?,
-            Self::SpawnFailed { program, os_error } => {
-                map.serialize_entry("program", program)?;
-                map.serialize_entry("osError", os_error)?;
-            }
-            Self::TerminalNotConfigured { .. } | Self::Internal(_) => {}
-        }
-        map.end()
-    }
-}
+ui_error!(LaunchError);
 
 /// Starts a process. The real one is [`OsSpawner`]; tests record instead.
 pub trait Spawner {
@@ -109,11 +82,10 @@ pub fn launch_session(
     workspace_id: i64,
     mode: &LaunchMode,
 ) -> Result<(), LaunchError> {
-    let workspaces = store.list_workspaces().map_err(|e| LaunchError::Internal(e.to_string()))?;
-    let workspace = workspaces
-        .into_iter()
-        .find(|ws| ws.id == workspace_id)
-        .ok_or(LaunchError::WorkspaceNotFound { workspace_id })?;
+    let workspace = store.get_workspace(workspace_id).map_err(|e| match e {
+        StoreError::NoSuchWorkspace(_) => LaunchError::WorkspaceNotFound { workspace_id },
+        other => LaunchError::Internal(other.to_string()),
+    })?;
     // `missing` was checked as the record was read, i.e. now, on this click.
     if workspace.missing {
         return Err(LaunchError::WorkspaceMissing { workspace_id, path: workspace.path.to_string() });
@@ -142,6 +114,20 @@ fn resume_cwd(store: &Store, workspace: &Workspace, session_id: &str) -> Result<
     } else {
         Ok(workspace.path.clone())
     }
+}
+
+/// Show `dir` in the system file manager (Settings › Data › Open data folder).
+/// Explorer exits non-zero even when it opens the folder, so only a failure
+/// to start counts, and nothing waits for it.
+pub fn open_folder(spawner: &dyn Spawner, dir: &str) -> io::Result<()> {
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    spawner.spawn(&TerminalCommand { program: program.into(), args: vec![dir.into()], current_dir: None })
 }
 
 /// Settings › Terminal › Test: run the Agent's version command (`claude

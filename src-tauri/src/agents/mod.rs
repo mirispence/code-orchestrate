@@ -26,8 +26,10 @@ pub struct Capabilities {
     pub session_history: bool,
 }
 
-/// How a Session is started.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// How a Session is started. The UI sends `"new"`, `"continue"`, or
+/// `{ "resume": "<session id>" }`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum LaunchMode {
     New,
     Continue,
