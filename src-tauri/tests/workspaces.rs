@@ -11,7 +11,7 @@ fn adds_an_existing_directory_under_its_normalised_path() {
     let store = Store::open_in_memory().unwrap();
     let raw = format!("{}{}", dir.path().display(), std::path::MAIN_SEPARATOR);
 
-    let ws = add_workspace(&store, "Temp", &raw).unwrap();
+    let ws = add_workspace(&store, "Temp", &raw).unwrap().workspace;
 
     let expected = code_orchestrate_lib::paths::normalize(dir.path().to_str().unwrap()).unwrap();
     assert_eq!(ws.path, expected);
@@ -44,7 +44,7 @@ fn rejects_a_file() {
 fn a_duplicate_reports_the_owning_workspace() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open_in_memory().unwrap();
-    let first = add_workspace(&store, "First", dir.path().to_str().unwrap()).unwrap();
+    let first = add_workspace(&store, "First", dir.path().to_str().unwrap()).unwrap().workspace;
 
     let variant = format!("{}{}", dir.path().display().to_string().to_uppercase(), std::path::MAIN_SEPARATOR);
     let variant = if cfg!(windows) { variant } else { format!("{}/", dir.path().display()) };
@@ -71,7 +71,7 @@ fn errors_serialise_for_the_ui_with_a_kind_and_message() {
 fn edit_errors_serialise_for_the_ui() {
     let store = Store::open_in_memory().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let ws = add_workspace(&store, "W", dir.path().to_str().unwrap()).unwrap();
+    let ws = add_workspace(&store, "W", dir.path().to_str().unwrap()).unwrap().workspace;
 
     let blank = WorkspaceEdit { name: " ".into(), note: None, tags: vec![] };
     let err = update_workspace(&store, ws.id, blank).unwrap_err();
@@ -88,7 +88,7 @@ fn edit_errors_serialise_for_the_ui() {
 fn edits_pins_and_removes_through_the_workspace_ops() {
     let store = Store::open_in_memory().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let ws = add_workspace(&store, "W", dir.path().to_str().unwrap()).unwrap();
+    let ws = add_workspace(&store, "W", dir.path().to_str().unwrap()).unwrap().workspace;
 
     let edited = update_workspace(
         &store,
