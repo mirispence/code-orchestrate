@@ -29,7 +29,7 @@ type EditWorkspaceDialogProps = {
   onShowWorkspace: (id: number) => void;
 };
 
-/** Edit dialog: name, path, tags, note, former paths and Remove Workspace (spec §8.2, §6.2). */
+/** Edit dialog: name, path, pinned, tags, note, former paths and Remove Workspace (spec §8.2, §6.2). */
 export function EditWorkspaceDialog({ workspace, onClose, ...rest }: EditWorkspaceDialogProps) {
   return (
     <Dialog open={workspace !== null} onOpenChange={(open) => !open && onClose()}>
@@ -56,6 +56,7 @@ function EditWorkspaceForm({
   const [note, setNote] = useState(workspace.note ?? "");
   const [tags, setTags] = useState(workspace.tags);
   const [draftTag, setDraftTag] = useState("");
+  const [pinned, setPinned] = useState(workspace.pinned);
   const [path, setPath] = useState(workspace.path);
   const [formerPaths, setFormerPaths] = useState(workspace.formerPaths);
   const [error, setError] = useState<AddWorkspaceError | null>(null);
@@ -91,6 +92,10 @@ function EditWorkspaceForm({
       }
       for (const removed of workspace.formerPaths.filter((p) => !formerPaths.includes(p))) {
         const result = await api.removeFormerPath(workspace.id, removed);
+        if (!result.ok) return setError(result.error);
+      }
+      if (pinned !== workspace.pinned) {
+        const result = await api.setPinned(workspace.id, pinned);
         if (!result.ok) return setError(result.error);
       }
       const result = await api.updateWorkspace(workspace.id, {
@@ -172,6 +177,16 @@ function EditWorkspaceForm({
             Locate…
           </Button>
         </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          id="edit-workspace-pinned"
+          type="checkbox"
+          className="size-4 accent-brand"
+          checked={pinned}
+          onChange={(e) => setPinned(e.target.checked)}
+        />
+        <Label htmlFor="edit-workspace-pinned">Pinned</Label>
       </div>
       {formerPaths.length > 0 && (
         <div className="grid gap-2">

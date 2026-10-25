@@ -437,6 +437,43 @@ describe("Edit Workspace", () => {
     expect(within(screen.getByRole("main")).getByRole("heading", { name: "New" })).toBeInTheDocument();
   });
 
+  it("pins from the dialog's Pinned checkbox on Save", async () => {
+    const ws = workspace({ id: 4, name: "Old" });
+    mocked.listWorkspaces.mockResolvedValue([ws]);
+    mocked.updateWorkspace.mockResolvedValue({ ok: true, value: ws });
+    mocked.setPinned.mockResolvedValue({ ok: true, value: { ...ws, pinned: true } });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Old");
+    const dialog = await openEdit(user);
+    const pinned = within(dialog).getByRole("checkbox", { name: "Pinned" });
+    expect(pinned).not.toBeChecked();
+    await user.click(pinned);
+    mocked.listWorkspaces.mockResolvedValue([{ ...ws, pinned: true }]);
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mocked.setPinned).toHaveBeenCalledWith(4, true));
+    const pinnedList = await screen.findByRole("list", { name: "Pinned" });
+    expect(within(pinnedList).getByText("Old")).toBeInTheDocument();
+  });
+
+  it("does not touch pinning when the checkbox is unchanged", async () => {
+    const ws = workspace({ id: 4, name: "Old", pinned: true });
+    mocked.listWorkspaces.mockResolvedValue([ws]);
+    mocked.updateWorkspace.mockResolvedValue({ ok: true, value: ws });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await selectWorkspace(user, "Old");
+    const dialog = await openEdit(user);
+    expect(within(dialog).getByRole("checkbox", { name: "Pinned" })).toBeChecked();
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mocked.updateWorkspace).toHaveBeenCalled());
+    expect(mocked.setPinned).not.toHaveBeenCalled();
+  });
+
   it("saves a tag still being typed", async () => {
     const ws = workspace({ id: 4, name: "Old" });
     mocked.listWorkspaces.mockResolvedValue([ws]);
