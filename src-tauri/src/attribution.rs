@@ -6,8 +6,9 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::agents::TokenUsage;
 use crate::paths::NormalizedPath;
-use crate::store::{Store, StoreError, Workspace};
+use crate::store::{Session, Store, StoreError, Workspace};
 
 /// The Workspace a Session in `cwd` belongs to: the one with a current or
 /// former path that equals or is an ancestor of `cwd`, the deepest path
@@ -65,4 +66,63 @@ pub fn suggestions(store: &Store) -> Result<Vec<Suggestion>, StoreError> {
     }
     list.sort_by(|a, b| b.last_seen.cmp(&a.last_seen).then_with(|| a.path.as_str().cmp(b.path.as_str())));
     Ok(list)
+}
+
+/// One Workspace's all-time totals over its attributed Sessions (spec §5.6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceStats {
+    pub workspace_id: i64,
+    pub session_count: u32,
+    /// The newest `last_activity_at`, Unix epoch milliseconds.
+    pub last_used: Option<i64>,
+    /// Sum of active time; `None` when no Session reports it.
+    pub session_time_ms: Option<i64>,
+    /// Field-wise sums; a field is `None` when no Session reports it.
+    pub tokens: TokenUsage,
+}
+
+/// Stats for every Workspace, in `list_workspaces` order. Each Session counts
+/// toward its owner only (the deepest matching Workspace).
+pub fn workspace_stats(store: &Store) -> Result<Vec<WorkspaceStats>, StoreError> {
+    let workspaces = store.list_workspaces()?;
+    let mut stats: Vec<WorkspaceStats> = workspaces
+        .iter()
+        .map(|w| WorkspaceStats {
+            workspace_id: w.id,
+            session_count: 0,
+            last_used: None,
+            session_time_ms: None,
+            tokens: TokenUsage::default(),
+        })
+        .collect();
+    let index: HashMap<i64, usize> = workspaces.iter().enumerate().map(|(i, w)| (w.id, i)).collect();
+    for session in store.list_sessions()? {
+        let Some(owner) = owner(&session.first_cwd, &workspaces) else { continue };
+        let s = &mut stats[index[&owner.id]];
+        s.session_count += 1;
+        s.last_used = s.last_used.max(session.last_activity_at);
+        if let Some(ms) = session.active_time_ms {
+            s.session_time_ms = Some(s.session_time_ms.unwrap_or(0) + ms);
+        }
+        s.tokens = s.tokens.plus(session.tokens);
+    }
+    Ok(stats)
+}
+
+/// The Sessions attributed to a Workspace, newest last activity first.
+pub fn workspace_sessions(store: &Store, workspace_id: i64) -> Result<Vec<Session>, StoreError> {
+    let workspaces = store.list_workspaces()?;
+    if !workspaces.iter().any(|w| w.id == workspace_id) {
+        return Err(StoreError::NoSuchWorkspace(workspace_id));
+    }
+    let mut sessions: Vec<Session> = store
+        .list_sessions()?
+        .into_iter()
+        .filter(|s| owner(&s.first_cwd, &workspaces).is_some_and(|w| w.id == workspace_id))
+        .collect();
+    sessions.sort_by(|a, b| {
+        b.last_activity_at.cmp(&a.last_activity_at).then_with(|| a.session_id.cmp(&b.session_id))
+    });
+    Ok(sessions)
 }

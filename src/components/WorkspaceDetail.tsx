@@ -2,13 +2,16 @@ import { useEffect, useId, useState } from "react";
 import { Play, RotateCw, Star } from "lucide-react";
 
 import { ErrorToast } from "@/components/ErrorToast";
+import { StatTiles } from "@/components/StatTiles";
 import { TagList } from "@/components/TagList";
 import { Button } from "@/components/ui/button";
-import { api, type AgentStatus, type LaunchMode, type Workspace } from "@/lib/api";
+import { api, type AgentStatus, type LaunchMode, type Workspace, type WorkspaceStats } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type WorkspaceDetailProps = {
   workspace: Workspace;
+  /** This Workspace's stats; `null` or absent until loaded (shown as empty). */
+  stats?: WorkspaceStats | null;
   onEdit: () => void;
   onTogglePin: () => void;
   /** Opens the Settings page (spec §9), where the executable can be set. */
@@ -21,9 +24,21 @@ type WorkspaceDetailProps = {
 
 const MISSING_HINT = "The folder is missing. Locate it to launch here.";
 
-/** Detail pane for the selected Workspace (spec §8.2). Later tickets add stats and history. */
+/** Stats for a Workspace with no Sessions. */
+function emptyStats(workspaceId: number): WorkspaceStats {
+  return {
+    workspaceId,
+    sessionCount: 0,
+    lastUsed: null,
+    sessionTimeMs: null,
+    tokens: { input: null, output: null, cacheWrite: null, cacheRead: null },
+  };
+}
+
+/** Detail pane for the selected Workspace (spec §8.2). */
 export function WorkspaceDetail({
   workspace,
+  stats,
   onEdit,
   onTogglePin,
   onOpenSettings,
@@ -120,6 +135,9 @@ export function WorkspaceDetail({
           </span>
         )}
       </div>
+
+      {/* Hidden when the Agent keeps no Session history (spec §3.2). */}
+      {agent?.capabilities.sessionHistory !== false && <StatTiles stats={stats ?? emptyStats(workspace.id)} />}
 
       {launchError !== null && (
         <ErrorToast

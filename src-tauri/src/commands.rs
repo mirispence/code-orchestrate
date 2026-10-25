@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::attribution::{self, Suggestion};
+use crate::attribution::{self, Suggestion, WorkspaceStats};
 use crate::scan::{self, Scanner};
 use crate::settings::{SettingsError, SettingsFile, Snapshot, Theme};
 use crate::agents::claude_code::ClaudeCode;
 use crate::agents::{self, AgentStatus, LaunchMode};
 use crate::launch::{self, CustomTemplate, LaunchError, OsSpawner, Terminal};
-use crate::store::{Store, Workspace, WorkspaceEdit};
+use crate::store::{Session, Store, Workspace, WorkspaceEdit};
 use crate::workspaces::{self, AddWorkspaceError, Saved, WorkspaceError};
 
 /// The app's single store, shared across commands and worker threads.
@@ -260,6 +260,24 @@ pub fn scan_running(scanner: State<'_, Scanner>) -> bool {
 #[tauri::command]
 pub async fn list_suggestions(store: State<'_, AppStore>) -> Result<Vec<Suggestion>, InternalError> {
     with_store(&store, InternalError::new, |s| attribution::suggestions(s).map_err(InternalError::new)).await
+}
+
+/// Every Workspace's stats, computed from stored Sessions (spec §5.6).
+#[tauri::command]
+pub async fn workspace_stats(store: State<'_, AppStore>) -> Result<Vec<WorkspaceStats>, InternalError> {
+    with_store(&store, InternalError::new, |s| attribution::workspace_stats(s).map_err(InternalError::new)).await
+}
+
+/// A Workspace's Sessions, newest last activity first (spec §8.2).
+#[tauri::command]
+pub async fn list_workspace_sessions(
+    store: State<'_, AppStore>,
+    workspace_id: i64,
+) -> Result<Vec<Session>, InternalError> {
+    with_store(&store, InternalError::new, move |s| {
+        attribution::workspace_sessions(s, workspace_id).map_err(InternalError::new)
+    })
+    .await
 }
 
 #[tauri::command]
