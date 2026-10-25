@@ -348,3 +348,49 @@ fn changing_the_transcript_root_keeps_sessions_and_reads_the_new_root() {
     expected.sort();
     assert_eq!(found, expected);
 }
+
+#[test]
+fn sessions_at_a_former_path_keep_attributing_after_re_pointing() {
+    let f = Fixture::new();
+    let old = f.dir("old");
+    let new = f.dir("new");
+    f.transcript("p", "s1", old.as_str(), &["2026-10-24T04:00:00Z"]);
+    f.transcript("p", "s2", new.as_str(), &["2026-10-25T04:00:00Z"]);
+    let id = f.add_workspace(&old);
+    f.store.lock().unwrap().repoint_workspace(id, &new).unwrap();
+
+    f.scan();
+
+    assert!(f.suggestions().is_empty(), "both the former and the new path are covered");
+    let workspaces = f.store.lock().unwrap().list_workspaces().unwrap();
+    assert_eq!(attribution::owner(&old, &workspaces).map(|w| w.id), Some(id));
+    assert_eq!(attribution::owner(&new, &workspaces).map(|w| w.id), Some(id));
+}
+
+#[test]
+fn former_paths_take_part_in_nesting() {
+    let f = Fixture::new();
+    let outer = f.dir("code");
+    let outer_id = f.add_workspace(&outer);
+    let inner_id = f.add_workspace(&f.dir("code/app"));
+    f.store.lock().unwrap().repoint_workspace(inner_id, &f.dir("moved")).unwrap();
+    let workspaces = f.store.lock().unwrap().list_workspaces().unwrap();
+
+    let owner = |p: &NormalizedPath| attribution::owner(p, &workspaces).map(|w| w.id);
+    assert_eq!(owner(&f.dir("code/app/src")), Some(inner_id), "the deeper former path wins");
+    assert_eq!(owner(&f.dir("code/lib")), Some(outer_id));
+}
+
+#[test]
+fn removing_a_former_path_makes_its_sessions_a_suggestion_again() {
+    let f = Fixture::new();
+    let old = f.dir("old");
+    f.transcript("p", "s1", old.as_str(), &["2026-10-24T04:00:00Z"]);
+    let id = f.add_workspace(&old);
+    f.store.lock().unwrap().repoint_workspace(id, &f.dir("new")).unwrap();
+    f.scan();
+
+    f.store.lock().unwrap().remove_former_path(id, &old).unwrap();
+
+    assert_eq!(paths(&f.suggestions()), vec![old.to_string()]);
+}

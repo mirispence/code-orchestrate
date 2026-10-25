@@ -20,6 +20,8 @@ const ws: Workspace = {
   note: null,
   createdAt: 1_700_000_000_000,
   tags: [],
+  formerPaths: [],
+  missing: false,
 };
 
 function status(overrides: Partial<AgentStatus> = {}): AgentStatus {
@@ -33,7 +35,7 @@ function status(overrides: Partial<AgentStatus> = {}): AgentStatus {
 }
 
 function renderDetail(onOpenSettings = vi.fn()) {
-  render(<WorkspaceDetail workspace={ws} onEdit={vi.fn()} onTogglePin={vi.fn()} onOpenSettings={onOpenSettings} />);
+  render(<WorkspaceDetail workspace={ws} onEdit={vi.fn()} onTogglePin={vi.fn()} onOpenSettings={onOpenSettings} onLocate={vi.fn()} onFoundMissing={vi.fn()} />);
   return { onOpenSettings };
 }
 

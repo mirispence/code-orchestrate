@@ -14,7 +14,7 @@ use crate::paths::{NormalizedPath, normalize};
 use crate::agents::{self, AgentStatus, LaunchMode};
 use crate::launch::{self, CustomTemplate, LaunchError, OsSpawner, Terminal};
 use crate::store::{Store, Workspace, WorkspaceEdit};
-use crate::workspaces::{self, AddWorkspaceError, WorkspaceError};
+use crate::workspaces::{self, AddWorkspaceError, Saved, WorkspaceError};
 
 /// The app's single store, shared across commands and worker threads.
 pub type AppStore = Arc<Mutex<Store>>;
@@ -93,11 +93,30 @@ pub async fn add_workspace(
     store: State<'_, AppStore>,
     name: String,
     path: String,
-) -> Result<Workspace, AddWorkspaceError> {
+) -> Result<Saved, AddWorkspaceError> {
     with_store(&store, AddWorkspaceError::Internal, move |s| {
         workspaces::add_workspace(s, &name, &path)
     })
     .await
+}
+
+/// Locate… or a path edit: point a Workspace at a new, existing folder.
+#[tauri::command]
+pub async fn repoint_workspace(
+    store: State<'_, AppStore>,
+    id: i64,
+    path: String,
+) -> Result<Saved, AddWorkspaceError> {
+    with_store(&store, AddWorkspaceError::Internal, move |s| workspaces::repoint_workspace(s, id, &path)).await
+}
+
+#[tauri::command]
+pub async fn remove_former_path(
+    store: State<'_, AppStore>,
+    id: i64,
+    path: String,
+) -> Result<Workspace, WorkspaceError> {
+    with_store(&store, WorkspaceError::Internal, move |s| workspaces::remove_former_path(s, id, &path)).await
 }
 
 /// The app's settings file. The mutex serialises read-modify-write saves.

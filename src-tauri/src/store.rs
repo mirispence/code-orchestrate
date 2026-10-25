@@ -2,9 +2,9 @@
 //! records and domain errors; SQL stays in this module.
 //!
 //! Adding a table or column: append a migration to [`MIGRATIONS`] (never edit
-//! a shipped one). Path uniqueness across Workspace current (and, later,
-//! former) paths is enforced here by each row's `path_key`, the path's
-//! [`NormalizedPath::comparison_key`].
+//! a shipped one). Path uniqueness across Workspace current and former paths
+//! is enforced here by each row's `path_key`, the path's
+//! [`NormalizedPath::comparison_key`]: a path has one owner (spec §6.2).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -66,6 +66,15 @@ const MIGRATIONS: &[&str] = &[
         path_key      TEXT    PRIMARY KEY,
         dismissed_at  INTEGER NOT NULL
     );",
+    // 4: WorkspaceFormerPath (spec §4.2). `path_key` is unique here and, by
+    // the checks in `Store`, never equal to any Workspace's current path key.
+    "CREATE TABLE workspace_former_path (
+        workspace_id INTEGER NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        path         TEXT    NOT NULL,
+        path_key     TEXT    NOT NULL UNIQUE,
+        added_at     INTEGER NOT NULL
+    );
+    CREATE INDEX workspace_former_path_by_workspace ON workspace_former_path (workspace_id);",
 ];
 
 /// The schema version this build migrates to.
@@ -99,6 +108,11 @@ pub struct Workspace {
     pub created_at: i64,
     /// In the order they were added; unique case-insensitively.
     pub tags: Vec<String>,
+    /// Paths it was re-pointed away from, oldest first (spec §6.5). They keep
+    /// attributing Sessions.
+    pub former_paths: Vec<NormalizedPath>,
+    /// The directory did not exist when this record was read (spec §6.3).
+    pub missing: bool,
 }
 
 /// The user-editable fields of a Workspace, as saved from the edit dialog.
@@ -200,6 +214,15 @@ impl Store {
                 workspaces[i].tags.push(tag);
             }
         }
+        let mut former = self.conn.prepare(
+            "SELECT workspace_id, path FROM workspace_former_path ORDER BY workspace_id, added_at, rowid",
+        )?;
+        for row in former.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
+            let (id, path) = row?;
+            if let Some(&i) = index.get(&id) {
+                workspaces[i].former_paths.push(NormalizedPath::from_stored(path));
+            }
+        }
         Ok(workspaces)
     }
 
@@ -228,10 +251,64 @@ impl Store {
             params![name, new.path.as_str(), key, now_millis()],
         )?;
         let id = tx.last_insert_rowid();
+        // A path has one owner: taking another Workspace's former path moves it (spec §6.2).
+        tx.execute("DELETE FROM workspace_former_path WHERE path_key = ?1", [&key])?;
         // Adding a Workspace at a dismissed path restores it (spec §6.6).
         tx.execute("DELETE FROM dismissed_path WHERE path_key = ?1", [&key])?;
         tx.commit()?;
         self.get_workspace(id)
+    }
+
+    /// Point a Workspace at a new path (Locate… or a path edit, spec §6.5).
+    /// The old path becomes one of its former paths. The new path may be one
+    /// of its own or another Workspace's former paths, which moves it here;
+    /// another Workspace's current path is rejected. Re-pointing to the
+    /// current path changes nothing.
+    pub fn repoint_workspace(&self, id: i64, path: &NormalizedPath) -> Result<Workspace, StoreError> {
+        let ws = self.get_workspace(id)?;
+        if ws.path.same_as(path) {
+            return Ok(ws);
+        }
+        let key = path.comparison_key();
+        if let Some((workspace_id, workspace_name)) = self.path_owner(&key)? {
+            return Err(StoreError::PathTaken { workspace_id, workspace_name });
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM workspace_former_path WHERE path_key = ?1", [&key])?;
+        tx.execute(
+            "INSERT INTO workspace_former_path (workspace_id, path, path_key, added_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, ws.path.as_str(), ws.path.comparison_key(), now_millis()],
+        )?;
+        tx.execute("UPDATE workspace SET path = ?1, path_key = ?2 WHERE id = ?3", params![path.as_str(), key, id])?;
+        // Re-pointing to a dismissed path restores it (spec §6.6).
+        tx.execute("DELETE FROM dismissed_path WHERE path_key = ?1", [&key])?;
+        tx.commit()?;
+        self.get_workspace(id)
+    }
+
+    /// Drop one of a Workspace's former paths (edit dialog, spec §6.2). Its
+    /// Sessions stop attributing to the Workspace. Removing a path it does
+    /// not have is a no-op.
+    pub fn remove_former_path(&self, id: i64, path: &NormalizedPath) -> Result<Workspace, StoreError> {
+        self.get_workspace(id)?;
+        self.conn.execute(
+            "DELETE FROM workspace_former_path WHERE workspace_id = ?1 AND path_key = ?2",
+            params![id, path.comparison_key()],
+        )?;
+        self.get_workspace(id)
+    }
+
+    /// The Workspace whose former paths include `path`, if any.
+    pub fn former_path_owner(&self, path: &NormalizedPath) -> Result<Option<(i64, String)>, StoreError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT w.id, w.name FROM workspace_former_path f JOIN workspace w ON w.id = f.workspace_id
+                 WHERE f.path_key = ?1",
+                [path.comparison_key()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
     }
 
     /// Change a Workspace's name, note and tags (spec §6.2). The name is
@@ -382,6 +459,11 @@ impl Store {
         let mut stmt =
             self.conn.prepare("SELECT tag FROM workspace_tag WHERE workspace_id = ?1 ORDER BY position")?;
         ws.tags = stmt.query_map([id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        let mut stmt = self.conn.prepare(
+            "SELECT path FROM workspace_former_path WHERE workspace_id = ?1 ORDER BY added_at, rowid",
+        )?;
+        ws.former_paths =
+            stmt.query_map([id], |r| Ok(NormalizedPath::from_stored(r.get(0)?)))?.collect::<Result<_, _>>()?;
         Ok(ws)
     }
 
@@ -413,14 +495,19 @@ fn backup_path(db_path: &Path) -> PathBuf {
 }
 
 fn workspace_from_row(row: &Row<'_>) -> rusqlite::Result<Workspace> {
+    let path = NormalizedPath::from_stored(row.get(2)?);
     Ok(Workspace {
         id: row.get(0)?,
         name: row.get(1)?,
-        path: NormalizedPath::from_stored(row.get(2)?),
+        // Checked on every read, so each scan trigger or selection that
+        // reloads Workspaces sees the directory as it is now (spec §6.3).
+        missing: !path.as_path().is_dir(),
+        path,
         pinned: row.get(3)?,
         note: row.get(4)?,
         created_at: row.get(5)?,
         tags: Vec::new(),
+        former_paths: Vec::new(),
     })
 }
 

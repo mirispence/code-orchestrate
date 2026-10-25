@@ -12,6 +12,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
     api: {
       listWorkspaces: vi.fn(),
       addWorkspace: vi.fn(),
+      repointWorkspace: vi.fn(),
+      removeFormerPath: vi.fn(),
       pickFolder: vi.fn(),
       getSettings: vi.fn(),
       setSetting: vi.fn(),
@@ -52,6 +54,8 @@ const ws: Workspace = {
   note: null,
   createdAt: 1_700_000_000_000,
   tags: [],
+  formerPaths: [],
+  missing: false,
 };
 
 async function openSettings(user: ReturnType<typeof userEvent.setup>) {

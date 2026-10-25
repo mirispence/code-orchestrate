@@ -12,6 +12,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
     api: {
       listWorkspaces: vi.fn(),
       addWorkspace: vi.fn(),
+      repointWorkspace: vi.fn(),
+      removeFormerPath: vi.fn(),
       pickFolder: vi.fn(),
       getSettings: vi.fn(),
       setSetting: vi.fn(),
@@ -47,6 +49,8 @@ const added: Workspace = {
   note: null,
   createdAt: 1_700_000_000_000,
   tags: [],
+  formerPaths: [],
+  missing: false,
 };
 
 /** The listener App registered for scan-state events. */
@@ -137,7 +141,7 @@ describe("Suggestions inbox", () => {
     mocked.addWorkspace.mockImplementation(async () => {
       stored = [];
       mocked.listWorkspaces.mockResolvedValue([added]);
-      return { ok: true, value: added };
+      return { ok: true, value: { workspace: added, movedFrom: null } };
     });
     const user = userEvent.setup();
     render(<App />);
