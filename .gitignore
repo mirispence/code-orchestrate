@@ -1,0 +1,15 @@
+# Dependencies and build output
+node_modules/
+dist/
+target/
+
+# Tauri generated schemas
+src-tauri/gen/
+
+# Claude Code agent worktrees
+.claude/worktrees/
+
+# Editor / OS
+.idea/
+.DS_Store
+*.log
