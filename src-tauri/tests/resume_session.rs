@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use code_orchestrate_lib::agents::claude_code::ClaudeCode;
 use code_orchestrate_lib::agents::{LaunchMode, SessionSummary, SourceKey, TokenUsage};
 use code_orchestrate_lib::attribution;
-use code_orchestrate_lib::commands::SessionStart;
 use code_orchestrate_lib::launch::{LaunchError, Spawner, Terminal, TerminalCommand, launch_session};
 use code_orchestrate_lib::paths::normalize;
 use code_orchestrate_lib::store::{ScannedSource, Store};
@@ -164,9 +163,11 @@ fn resuming_a_session_whose_transcript_was_deleted_spawns_nothing() {
 }
 
 #[test]
-fn the_ui_asks_to_resume_with_the_session_id() {
-    let mode: SessionStart = serde_json::from_value(serde_json::json!({"resume": "abc-123"})).unwrap();
-    assert!(matches!(mode, SessionStart::Resume(id) if id == "abc-123"));
+fn the_ui_sends_the_launch_mode_as_new_continue_or_resume_with_the_session_id() {
+    let mode = |v| serde_json::from_value::<LaunchMode>(v).unwrap();
+    assert_eq!(mode(serde_json::json!("new")), LaunchMode::New);
+    assert_eq!(mode(serde_json::json!("continue")), LaunchMode::Continue);
+    assert_eq!(mode(serde_json::json!({"resume": "abc-123"})), LaunchMode::Resume("abc-123".into()));
 }
 
 #[test]

@@ -244,16 +244,6 @@ pub async fn claude_code_status(
     .map_err(InternalError::new)
 }
 
-/// How the UI asks to start a Session: `"new"`, `"continue"`, or
-/// `{ "resume": "<session id>" }`.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SessionStart {
-    New,
-    Continue,
-    Resume(String),
-}
-
 /// The terminal chosen in Settings, read fresh so a hand edit applies at once.
 fn configured(settings: &AppSettings) -> Result<(Terminal, ClaudeCode), LaunchError> {
     let file = settings.lock().map_err(|e| LaunchError::Internal(e.to_string()))?;
@@ -266,13 +256,8 @@ pub async fn launch_session(
     store: State<'_, AppStore>,
     settings: State<'_, AppSettings>,
     workspace_id: i64,
-    mode: SessionStart,
+    mode: LaunchMode,
 ) -> Result<(), LaunchError> {
-    let mode = match mode {
-        SessionStart::New => LaunchMode::New,
-        SessionStart::Continue => LaunchMode::Continue,
-        SessionStart::Resume(session_id) => LaunchMode::Resume(session_id),
-    };
     let settings = Arc::clone(&settings);
     with_store(&store, LaunchError::Internal, move |s| {
         let (terminal, agent) = configured(&settings)?;
