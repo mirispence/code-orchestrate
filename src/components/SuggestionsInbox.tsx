@@ -1,13 +1,14 @@
 import { useState } from "react";
 
+import { MissingBadge } from "@/components/MissingBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { lastSegment, type Result, type Suggestion, type Workspace } from "@/lib/api";
+import { lastSegment, type Result, type Suggestion } from "@/lib/api";
 
 type SuggestionsInboxProps = {
   suggestions: Suggestion[];
   /** Create a Workspace at the Suggestion's path. */
-  onAdd: (name: string, path: string) => Promise<Result<Workspace, { message: string }>>;
+  onAdd: (name: string, path: string) => Promise<Result<unknown, { message: string }>>;
   onDismiss: (path: string) => Promise<Result<unknown, { message: string }>>;
 };
 
@@ -57,7 +58,7 @@ function SuggestionRow({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium break-all">{path}</span>
         {missing && (
-          <span className="rounded bg-brand/15 px-1.5 py-0.5 text-xs font-medium text-brand">Missing</span>
+          <MissingBadge />
         )}
       </div>
       <div className="flex gap-3 text-xs text-muted-foreground">

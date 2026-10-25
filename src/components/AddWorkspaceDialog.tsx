@@ -11,13 +11,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, lastSegment, type AddWorkspaceError, type Workspace } from "@/lib/api";
+import { api, lastSegment, type AddWorkspaceError, type Saved } from "@/lib/api";
 
 type AddWorkspaceDialogProps = {
   /** The picked folder; the dialog is open while this is set. */
   path: string | null;
   onClose: () => void;
-  onAdded: (workspace: Workspace) => void;
+  onAdded: (saved: Saved) => void;
   /** Jump to the Workspace that already owns the path. */
   onShowWorkspace: (id: number) => void;
 };
