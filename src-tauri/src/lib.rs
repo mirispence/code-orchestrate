@@ -9,6 +9,7 @@ pub mod paths;
 pub mod scan;
 pub mod settings;
 pub mod store;
+mod ui_error;
 pub mod workspaces;
 
 use std::sync::{Arc, Mutex};

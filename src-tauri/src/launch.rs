@@ -5,15 +5,16 @@ use std::io;
 use std::path::Path;
 
 use serde::Serialize;
-use serde::ser::{SerializeMap, Serializer};
 
 use crate::agents::{AgentAdapter, LaunchCommand, LaunchCommandError, LaunchMode};
 use crate::attribution;
 use crate::paths::NormalizedPath;
 use crate::store::{Store, Workspace};
+use crate::ui_error::ui_error;
 
 /// Why a launch failed. Serialises for the UI as `{ kind, message, ...fields }`.
-#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq, Serialize)]
+#[serde(remote = "Self", tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum LaunchError {
     #[error("{name} was not found")]
     ExecutableNotFound { name: String },
@@ -32,9 +33,12 @@ pub enum LaunchError {
     SpawnFailed { program: String, os_error: String },
     /// The chosen terminal preset cannot be used as configured.
     #[error("{message}")]
-    TerminalNotConfigured { message: String },
+    TerminalNotConfigured {
+        #[serde(skip)]
+        message: String,
+    },
     #[error("{0}")]
-    Internal(String),
+    Internal(#[serde(serialize_with = "crate::ui_error::omit")] String),
 }
 
 impl From<LaunchCommandError> for LaunchError {
@@ -45,38 +49,7 @@ impl From<LaunchCommandError> for LaunchError {
     }
 }
 
-impl Serialize for LaunchError {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(None)?;
-        let kind = match self {
-            Self::ExecutableNotFound { .. } => "executableNotFound",
-            Self::WorkspaceNotFound { .. } => "workspaceNotFound",
-            Self::WorkspaceMissing { .. } => "workspaceMissing",
-            Self::SessionNotFound { .. } => "sessionNotFound",
-            Self::TranscriptDeleted { .. } => "transcriptDeleted",
-            Self::SpawnFailed { .. } => "spawnFailed",
-            Self::TerminalNotConfigured { .. } => "terminalNotConfigured",
-            Self::Internal(_) => "internal",
-        };
-        map.serialize_entry("kind", kind)?;
-        map.serialize_entry("message", &self.to_string())?;
-        match self {
-            Self::ExecutableNotFound { name } => map.serialize_entry("name", name)?,
-            Self::WorkspaceNotFound { workspace_id } => map.serialize_entry("workspaceId", workspace_id)?,
-            Self::WorkspaceMissing { workspace_id, path } => {
-                map.serialize_entry("workspaceId", workspace_id)?;
-                map.serialize_entry("path", path)?;
-            }
-            Self::SessionNotFound { session_id } | Self::TranscriptDeleted { session_id } => map.serialize_entry("sessionId", session_id)?,
-            Self::SpawnFailed { program, os_error } => {
-                map.serialize_entry("program", program)?;
-                map.serialize_entry("osError", os_error)?;
-            }
-            Self::TerminalNotConfigured { .. } | Self::Internal(_) => {}
-        }
-        map.end()
-    }
-}
+ui_error!(LaunchError);
 
 /// Starts a process. The real one is [`OsSpawner`]; tests record instead.
 pub trait Spawner {

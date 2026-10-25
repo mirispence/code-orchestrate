@@ -2,19 +2,20 @@
 //! (spec §6.2). Commands call these; they hold no Tauri types.
 
 use serde::Serialize;
-use serde::ser::{SerializeMap, Serializer};
 
 use crate::paths::{NormalizedPath, PathError, normalize};
 use crate::store::{NewWorkspace, Store, StoreError, Workspace, WorkspaceEdit};
+use crate::ui_error::ui_error;
 
 /// Why a Workspace could not be added. Serialises for the UI as
 /// `{ kind, message, ...fields }` with camelCase keys.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq, Serialize)]
+#[serde(remote = "Self", tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum AddWorkspaceError {
     #[error("A Workspace needs a name")]
     EmptyName,
     #[error("{0}")]
-    InvalidPath(String),
+    InvalidPath(#[serde(serialize_with = "crate::ui_error::omit")] String),
     #[error("Folder not found: {path}")]
     NotFound { path: String },
     #[error("Not a folder: {path}")]
@@ -24,7 +25,7 @@ pub enum AddWorkspaceError {
     #[error("That Workspace no longer exists")]
     NoSuchWorkspace,
     #[error("{0}")]
-    Internal(String),
+    Internal(#[serde(serialize_with = "crate::ui_error::omit")] String),
 }
 
 /// A Workspace saved at a path, and the Workspace that path was moved off
@@ -88,16 +89,17 @@ fn former_owner(store: &Store, path: &NormalizedPath, except: Option<i64>) -> Re
 
 /// Why a Workspace could not be edited, pinned or removed. Serialises for the
 /// UI as `{ kind, message }`.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq, Serialize)]
+#[serde(remote = "Self", tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum WorkspaceError {
     #[error("A Workspace needs a name")]
     EmptyName,
     #[error("That Workspace no longer exists")]
     NoSuchWorkspace,
     #[error("{0}")]
-    InvalidPath(String),
+    InvalidPath(#[serde(serialize_with = "crate::ui_error::omit")] String),
     #[error("{0}")]
-    Internal(String),
+    Internal(#[serde(serialize_with = "crate::ui_error::omit")] String),
 }
 
 /// Save the edit dialog's name, note and tags (spec §6.2).
@@ -130,20 +132,7 @@ impl From<StoreError> for WorkspaceError {
     }
 }
 
-impl Serialize for WorkspaceError {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(2))?;
-        let kind = match self {
-            Self::EmptyName => "emptyName",
-            Self::NoSuchWorkspace => "noSuchWorkspace",
-            Self::InvalidPath(_) => "invalidPath",
-            Self::Internal(_) => "internal",
-        };
-        map.serialize_entry("kind", kind)?;
-        map.serialize_entry("message", &self.to_string())?;
-        map.end()
-    }
-}
+ui_error!(WorkspaceError);
 
 impl From<PathError> for AddWorkspaceError {
     fn from(e: PathError) -> Self {
@@ -164,30 +153,4 @@ impl From<StoreError> for AddWorkspaceError {
     }
 }
 
-impl Serialize for AddWorkspaceError {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(None)?;
-        let kind = match self {
-            Self::EmptyName => "emptyName",
-            Self::InvalidPath(_) => "invalidPath",
-            Self::NotFound { .. } => "notFound",
-            Self::NotADirectory { .. } => "notADirectory",
-            Self::PathTaken { .. } => "pathTaken",
-            Self::NoSuchWorkspace => "noSuchWorkspace",
-            Self::Internal(_) => "internal",
-        };
-        map.serialize_entry("kind", kind)?;
-        map.serialize_entry("message", &self.to_string())?;
-        match self {
-            Self::NotFound { path } | Self::NotADirectory { path } => {
-                map.serialize_entry("path", path)?;
-            }
-            Self::PathTaken { workspace_id, workspace_name } => {
-                map.serialize_entry("workspaceId", workspace_id)?;
-                map.serialize_entry("workspaceName", workspace_name)?;
-            }
-            _ => {}
-        }
-        map.end()
-    }
-}
+ui_error!(AddWorkspaceError);
