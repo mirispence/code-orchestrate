@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::agents::{AgentAdapter, LaunchCommand, LaunchCommandError, LaunchMode};
 use crate::attribution;
 use crate::paths::NormalizedPath;
-use crate::store::{Store, Workspace};
+use crate::store::{Store, StoreError, Workspace};
 use crate::ui_error::ui_error;
 
 /// Why a launch failed. Serialises for the UI as `{ kind, message, ...fields }`.
@@ -82,11 +82,10 @@ pub fn launch_session(
     workspace_id: i64,
     mode: &LaunchMode,
 ) -> Result<(), LaunchError> {
-    let workspaces = store.list_workspaces().map_err(|e| LaunchError::Internal(e.to_string()))?;
-    let workspace = workspaces
-        .into_iter()
-        .find(|ws| ws.id == workspace_id)
-        .ok_or(LaunchError::WorkspaceNotFound { workspace_id })?;
+    let workspace = store.get_workspace(workspace_id).map_err(|e| match e {
+        StoreError::NoSuchWorkspace(_) => LaunchError::WorkspaceNotFound { workspace_id },
+        other => LaunchError::Internal(other.to_string()),
+    })?;
     // `missing` was checked as the record was read, i.e. now, on this click.
     if workspace.missing {
         return Err(LaunchError::WorkspaceMissing { workspace_id, path: workspace.path.to_string() });
