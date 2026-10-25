@@ -12,6 +12,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     api: {
       listWorkspaces: vi.fn(),
       workspaceStats: vi.fn(),
+      listWorkspaceSessions: vi.fn(),
       addWorkspace: vi.fn(),
       repointWorkspace: vi.fn(),
       removeFormerPath: vi.fn(),
@@ -69,6 +70,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocked.listWorkspaces.mockResolvedValue([ws]);
   mocked.workspaceStats.mockResolvedValue([]);
+  mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [] });
   mocked.listSuggestions.mockResolvedValue([]);
   mocked.scanRunning.mockResolvedValue(false);
   mocked.onScanState.mockResolvedValue(() => {});

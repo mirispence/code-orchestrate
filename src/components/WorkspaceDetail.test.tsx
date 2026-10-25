@@ -1,13 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 
 import { WorkspaceDetail } from "./WorkspaceDetail";
-import { api, type AgentStatus, type Workspace } from "@/lib/api";
+import { api, type AgentStatus, type Session, type Workspace } from "@/lib/api";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
-  return { ...actual, api: { agentStatus: vi.fn(), launchSession: vi.fn() } };
+  return { ...actual, api: { agentStatus: vi.fn(), launchSession: vi.fn(), listWorkspaceSessions: vi.fn() } };
 });
 
 const mocked = vi.mocked(api);
@@ -43,6 +43,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocked.agentStatus.mockResolvedValue(status());
   mocked.launchSession.mockResolvedValue({ ok: true, value: undefined });
+  mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [] });
 });
 
 describe("Launching from a Workspace", () => {
@@ -129,5 +130,135 @@ describe("Launching from a Workspace", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+function session(overrides: Partial<Session> = {}): Session {
+  return {
+    agentId: "claude-code",
+    sessionId: "0f3c9a2e-1111-2222-3333-444455556666",
+    firstCwd: "C:\\My Projects\\app",
+    title: "Fix the login form",
+    startedAt: null,
+    lastActivityAt: null,
+    activeTimeMs: 90 * 60_000,
+    tokens: { input: 1_000, output: 200, cacheWrite: 300, cacheRead: 9_000 },
+    sourcePath: "C:\\Users\\me\\.claude\\projects\\p\\0f3c9a2e.jsonl",
+    transcriptExists: true,
+    ...overrides,
+  };
+}
+
+function sessionRow(title: string) {
+  return screen.getByRole("row", { name: new RegExp(title) });
+}
+
+describe("Resuming a past Session", () => {
+  it("lists every Session in the order given, with title, short id, active time and tokens", async () => {
+    mocked.listWorkspaceSessions.mockResolvedValue({
+      ok: true,
+      value: [
+        session({ sessionId: "aaaaaaaa-newest", title: "Newest" }),
+        session({ sessionId: "bbbbbbbb-older", title: "Older", activeTimeMs: null }),
+      ],
+    });
+    renderDetail();
+
+    await screen.findByRole("row", { name: /Newest/ });
+    expect(mocked.listWorkspaceSessions).toHaveBeenCalledWith(7);
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows.map((r) => within(r).getAllByRole("cell")[0].textContent)).toEqual(["Newest", "Older"]);
+    const newest = sessionRow("Newest");
+    expect(newest).toHaveTextContent("aaaaaaaa");
+    expect(newest).not.toHaveTextContent("aaaaaaaa-newest");
+    expect(newest).toHaveTextContent("1h 30m");
+    expect(newest).toHaveTextContent("1.5k");
+    expect(sessionRow("Older")).toHaveTextContent("—");
+    for (const header of ["Title", "ID", "Started", "Active time", "Tokens"]) {
+      expect(screen.getByRole("columnheader", { name: header })).toBeInTheDocument();
+    }
+  });
+
+  it("Resume resumes that Session", async () => {
+    mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [session({ sessionId: "abc-123", title: "Fix it" })] });
+    const user = userEvent.setup();
+    renderDetail();
+
+    await screen.findByRole("row", { name: /Fix it/ });
+    const button = within(sessionRow("Fix it")).getByRole("button", { name: "Resume" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    expect(mocked.launchSession).toHaveBeenCalledWith(7, { resume: "abc-123" });
+  });
+
+  it('disables Resume with "Transcript deleted" when the transcript is gone, keeping its stats', async () => {
+    mocked.listWorkspaceSessions.mockResolvedValue({
+      ok: true,
+      value: [session({ title: "Gone", transcriptExists: false }), session({ sessionId: "kept", title: "Kept" })],
+    });
+    renderDetail();
+
+    await screen.findByRole("row", { name: /Gone/ });
+    await waitFor(() => expect(within(sessionRow("Kept")).getByRole("button", { name: "Resume" })).toBeEnabled());
+    const gone = within(sessionRow("Gone")).getByRole("button", { name: "Resume" });
+    expect(gone).toBeDisabled();
+    expect(gone).toHaveAccessibleDescription("Transcript deleted");
+    expect(gone.parentElement).toHaveAttribute("title", "Transcript deleted");
+    expect(sessionRow("Gone")).toHaveTextContent("1h 30m");
+  });
+
+  it("disables Resume when Claude Code is not found", async () => {
+    mocked.agentStatus.mockResolvedValue(status({ executable: null }));
+    mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [session({ title: "Fix it" })] });
+    renderDetail();
+
+    await screen.findByRole("row", { name: /Fix it/ });
+    const button = within(sessionRow("Fix it")).getByRole("button", { name: "Resume" });
+    await waitFor(() => expect(button).toHaveAccessibleDescription(/Claude Code was not found on PATH/));
+    expect(button).toBeDisabled();
+  });
+
+  it("disables Resume when the Workspace folder is missing", async () => {
+    mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [session({ title: "Fix it" })] });
+    render(
+      <WorkspaceDetail
+        workspace={{ ...ws, missing: true }}
+        onEdit={vi.fn()}
+        onTogglePin={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onLocate={vi.fn()}
+        onFoundMissing={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("row", { name: /Fix it/ });
+    const button = within(sessionRow("Fix it")).getByRole("button", { name: "Resume" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription(/The folder is missing/);
+  });
+
+  it("re-reads the Sessions when the stats are reloaded", async () => {
+    mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [] });
+    const props = {
+      workspace: ws,
+      onEdit: vi.fn(),
+      onTogglePin: vi.fn(),
+      onOpenSettings: vi.fn(),
+      onLocate: vi.fn(),
+      onFoundMissing: vi.fn(),
+    };
+    const { rerender } = render(<WorkspaceDetail {...props} stats={null} />);
+    await waitFor(() => expect(mocked.listWorkspaceSessions).toHaveBeenCalledTimes(1));
+
+    mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [session({ title: "Fresh" })] });
+    rerender(
+      <WorkspaceDetail
+        {...props}
+        stats={{ workspaceId: 7, sessionCount: 1, lastUsed: 1, sessionTimeMs: 1, tokens: session().tokens }}
+      />,
+    );
+
+    expect(await screen.findByRole("row", { name: /Fresh/ })).toBeInTheDocument();
   });
 });
