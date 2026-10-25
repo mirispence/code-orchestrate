@@ -99,20 +99,30 @@ export type AddWorkspaceError =
   | CommandError;
 
 /**
- * Every setting by its dotted `settings.json` key (spec §9.1). Mirrors `DEFS`
- * in `src-tauri/src/settings.rs`; add a setting in both places.
+ * Each setting's dotted `settings.json` key, named once. Mirrors the `*_KEY`
+ * constants and `DEFS` in `src-tauri/src/settings.rs`; add a setting in both places.
  */
+export const SETTING = {
+  theme: "theme",
+  preset: "terminal.preset",
+  windowsTerminalTarget: "terminal.windowsTerminal.target",
+  customTerminal: "terminal.custom",
+  executable: "agents.claude-code.executable",
+  transcriptRoot: "agents.claude-code.transcriptRoot",
+} as const;
+
+/** Every setting's value type by its key (spec §9.1). */
 export type SettingValues = {
-  theme: "system" | "light" | "dark";
+  [SETTING.theme]: "system" | "light" | "dark";
   /** Non-Windows platforms offer only `custom` (see `choices`). */
-  "terminal.preset": "windowsTerminal" | "console" | "custom";
-  "terminal.windowsTerminal.target": "newWindow" | "newTab";
+  [SETTING.preset]: "windowsTerminal" | "console" | "custom";
+  [SETTING.windowsTerminalTarget]: "newWindow" | "newTab";
   /** The custom argv template; must contain `{command}` as an argument. */
-  "terminal.custom": string[] | null;
+  [SETTING.customTerminal]: string[] | null;
   /** Blank: `claude` on PATH (spec §5.3). */
-  "agents.claude-code.executable": string;
+  [SETTING.executable]: string;
   /** Blank: `CLAUDE_CONFIG_DIR`, else `~/.claude` (spec §5.3). */
-  "agents.claude-code.transcriptRoot": string;
+  [SETTING.transcriptRoot]: string;
 };
 
 export type SettingKey = keyof SettingValues;

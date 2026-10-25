@@ -4,7 +4,7 @@ import { ClaudeCodeSettings } from "@/components/ClaudeCodeSettings";
 import { CustomTerminalSetting } from "@/components/CustomTerminalSetting";
 import { DismissedPaths } from "@/components/DismissedPaths";
 import { Button } from "@/components/ui/button";
-import { api, type SettingKey, type SettingValues } from "@/lib/api";
+import { api, SETTING, type SettingKey, type SettingValues } from "@/lib/api";
 import type { SettingsState } from "@/lib/useSettings";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +44,7 @@ export function SettingsPage({ settings, onClose, onRestored }: SettingsPageProp
     const choices = snapshot?.choices[key];
     return choices ? options.filter((o) => choices.includes(o.value)) : options;
   };
-  const preset = snapshot?.values["terminal.preset"];
+  const preset = snapshot?.values[SETTING.preset];
 
   return (
     <div className="flex max-w-3xl flex-col gap-7 px-9 pt-7 pb-12">
@@ -81,19 +81,19 @@ export function SettingsPage({ settings, onClose, onRestored }: SettingsPageProp
             { value: "light", label: "Light" },
             { value: "dark", label: "Dark" },
           ]}
-          {...row("theme")}
+          {...row(SETTING.theme)}
         />
       </SettingsSection>
 
       <SettingsSection title="Terminal">
         <ChoiceSetting
           label="Preset"
-          options={offered("terminal.preset", [
+          options={offered(SETTING.preset, [
             { value: "windowsTerminal", label: "Windows Terminal" },
             { value: "console", label: "Console window" },
             { value: "custom", label: "Custom" },
           ])}
-          {...row("terminal.preset")}
+          {...row(SETTING.preset)}
         />
         {preset === "windowsTerminal" && (
           <ChoiceSetting
@@ -102,16 +102,16 @@ export function SettingsPage({ settings, onClose, onRestored }: SettingsPageProp
               { value: "newWindow", label: "New window" },
               { value: "newTab", label: "New tab in most recent window" },
             ]}
-            {...row("terminal.windowsTerminal.target")}
+            {...row(SETTING.windowsTerminalTarget)}
           />
         )}
-        {preset === "custom" && <CustomTerminalSetting {...row("terminal.custom")} />}
+        {preset === "custom" && <CustomTerminalSetting {...row(SETTING.customTerminal)} />}
       </SettingsSection>
 
       <SettingsSection title="Agents › Claude Code">
         <ClaudeCodeSettings
-          executable={row("agents.claude-code.executable")}
-          transcriptRoot={row("agents.claude-code.transcriptRoot")}
+          executable={row(SETTING.executable)}
+          transcriptRoot={row(SETTING.transcriptRoot)}
         />
       </SettingsSection>
 
