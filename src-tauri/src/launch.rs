@@ -16,6 +16,9 @@ pub enum LaunchError {
     ExecutableNotFound { name: String },
     #[error("Workspace {workspace_id} does not exist")]
     WorkspaceNotFound { workspace_id: i64 },
+    /// The Workspace's directory is gone (spec §6.4). The app never creates it.
+    #[error("Folder not found: {path}. Locate it to launch here.")]
+    WorkspaceMissing { workspace_id: i64, path: String },
     #[error("Could not start {program}: {os_error}")]
     SpawnFailed { program: String, os_error: String },
     /// The chosen terminal preset cannot be used as configured.
@@ -39,6 +42,7 @@ impl Serialize for LaunchError {
         let kind = match self {
             Self::ExecutableNotFound { .. } => "executableNotFound",
             Self::WorkspaceNotFound { .. } => "workspaceNotFound",
+            Self::WorkspaceMissing { .. } => "workspaceMissing",
             Self::SpawnFailed { .. } => "spawnFailed",
             Self::TerminalNotConfigured { .. } => "terminalNotConfigured",
             Self::Internal(_) => "internal",
@@ -48,6 +52,10 @@ impl Serialize for LaunchError {
         match self {
             Self::ExecutableNotFound { name } => map.serialize_entry("name", name)?,
             Self::WorkspaceNotFound { workspace_id } => map.serialize_entry("workspaceId", workspace_id)?,
+            Self::WorkspaceMissing { workspace_id, path } => {
+                map.serialize_entry("workspaceId", workspace_id)?;
+                map.serialize_entry("path", path)?;
+            }
             Self::SpawnFailed { program, os_error } => {
                 map.serialize_entry("program", program)?;
                 map.serialize_entry("osError", os_error)?;
@@ -94,6 +102,10 @@ pub fn launch_session(
         .into_iter()
         .find(|ws| ws.id == workspace_id)
         .ok_or(LaunchError::WorkspaceNotFound { workspace_id })?;
+    // `missing` was checked as the record was read, i.e. now, on this click.
+    if workspace.missing {
+        return Err(LaunchError::WorkspaceMissing { workspace_id, path: workspace.path.to_string() });
+    }
     let command = agent.launch_command(&workspace.path, mode)?;
     spawn_in(&terminal, spawner, &command)
 }

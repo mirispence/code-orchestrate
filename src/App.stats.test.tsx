@@ -29,7 +29,18 @@ vi.mock("@/lib/api", async (importOriginal) => {
 const mocked = vi.mocked(api);
 
 function workspace(id: number, name: string, overrides: Partial<Workspace> = {}): Workspace {
-  return { id, name, path: `E:\\${name}`, pinned: false, note: null, createdAt: 0, tags: [], ...overrides };
+  return {
+    id,
+    name,
+    path: `E:\\${name}`,
+    pinned: false,
+    note: null,
+    createdAt: 0,
+    tags: [],
+    formerPaths: [],
+    missing: false,
+    ...overrides,
+  };
 }
 
 function stats(workspaceId: number, overrides: Partial<WorkspaceStats> = {}): WorkspaceStats {

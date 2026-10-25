@@ -8,7 +8,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SuggestionsInbox } from "@/components/SuggestionsInbox";
 import { WorkspaceDetail } from "@/components/WorkspaceDetail";
 import { Button } from "@/components/ui/button";
-import { api, type Suggestion, type Workspace, type WorkspaceStats } from "@/lib/api";
+import { api, type Saved, type Suggestion, type Workspace, type WorkspaceStats } from "@/lib/api";
 import { tagsInUse } from "@/lib/tags";
 import { useScan } from "@/lib/useScan";
 import { useSettings } from "@/lib/useSettings";
@@ -24,6 +24,7 @@ export default function App() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const settings = useSettings();
   const openSettings = useCallback(() => {
     setSuggestionsOpen(false);
@@ -64,8 +65,29 @@ export default function App() {
 
   async function addSuggestion(name: string, path: string) {
     const result = await api.addWorkspace(name, path);
-    if (result.ok) await reload();
+    if (result.ok) {
+      showMoveNotice(result.value);
+      await reload();
+    }
     return result;
+  }
+
+  /** Taking another Workspace's former path moves it off, with a notice (spec §6.2). */
+  function showMoveNotice(saved: Saved) {
+    setNotice(
+      saved.movedFrom === null
+        ? null
+        : `${saved.workspace.path} was a former path of ${saved.movedFrom.workspaceName}. It now belongs to ${saved.workspace.name}.`,
+    );
+  }
+
+  async function locate(ws: Workspace) {
+    const path = await api.pickFolder();
+    if (path === null) return;
+    const result = await api.repointWorkspace(ws.id, path);
+    setActionError(result.ok ? null : result.error.message);
+    if (result.ok) showMoveNotice(result.value);
+    void reload();
   }
 
   async function dismissSuggestion(path: string) {
@@ -89,6 +111,8 @@ export default function App() {
     setSettingsOpen(false);
     setSuggestionsOpen(false);
     setSelectedId(id);
+    // Re-reading checks every Workspace's folder, including this one (spec §6.3).
+    void reload();
   }
 
   function showWorkspace(id: number) {
@@ -132,6 +156,17 @@ export default function App() {
             {actionError}
           </p>
         )}
+        {notice !== null && (
+          <div
+            role="status"
+            className="m-4 flex items-center justify-between gap-4 rounded-md border border-brand/40 bg-brand/10 p-3 text-sm"
+          >
+            <span className="min-w-0 break-all">{notice}</span>
+            <Button size="sm" variant="ghost" onClick={() => setNotice(null)}>
+              Dismiss
+            </Button>
+          </div>
+        )}
         {settingsOpen ? (
           <SettingsPage settings={settings} onClose={closeSettings} />
         ) : suggestionsOpen ? (
@@ -143,6 +178,8 @@ export default function App() {
             onEdit={() => setEditingId(selected.id)}
             onTogglePin={() => void togglePin(selected)}
             onOpenSettings={openSettings}
+            onLocate={() => void locate(selected)}
+            onFoundMissing={() => void reload()}
           />
         ) : workspaces.length === 0 && loadError === null ? (
           <EmptyState onAddWorkspace={addWorkspace} onOpenSuggestions={openSuggestions} />
@@ -151,9 +188,9 @@ export default function App() {
       <AddWorkspaceDialog
         path={pickedPath}
         onClose={() => setPickedPath(null)}
-        onAdded={(ws) => {
-          showWorkspace(ws.id);
-          void reload();
+        onAdded={(saved) => {
+          showWorkspace(saved.workspace.id);
+          showMoveNotice(saved);
         }}
         onShowWorkspace={showWorkspace}
       />
@@ -161,8 +198,9 @@ export default function App() {
         workspace={editing}
         tagsInUse={tagsInUse(workspaces)}
         onClose={() => setEditingId(null)}
-        onSaved={() => {
+        onSaved={(saved) => {
           setEditingId(null);
+          showMoveNotice(saved);
           void reload();
         }}
         onRemoved={(id) => {

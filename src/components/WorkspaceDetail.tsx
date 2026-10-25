@@ -16,7 +16,13 @@ type WorkspaceDetailProps = {
   onTogglePin: () => void;
   /** Opens the Settings page (spec §9), where the executable can be set. */
   onOpenSettings: () => void;
+  /** Locate…: pick the folder's new location and re-point the Workspace (spec §6.5). */
+  onLocate: () => void;
+  /** A launch found the folder gone: re-read the Workspaces so it shows as Missing. */
+  onFoundMissing: () => void;
 };
+
+const MISSING_HINT = "The folder is missing. Locate it to launch here.";
 
 /** Stats for a Workspace with no Sessions. */
 function emptyStats(workspaceId: number): WorkspaceStats {
@@ -36,6 +42,8 @@ export function WorkspaceDetail({
   onEdit,
   onTogglePin,
   onOpenSettings,
+  onLocate,
+  onFoundMissing,
 }: WorkspaceDetailProps) {
   const [agent, setAgent] = useState<AgentStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -67,22 +75,37 @@ export function WorkspaceDetail({
     setLaunchError(null);
     const result = await api.launchSession(workspace.id, mode);
     setLaunching(false);
-    if (!result.ok) setLaunchError(result.error.message);
+    if (result.ok) return;
+    // The backend re-checks the folder on every click; the banner then explains it.
+    if (result.error.kind === "workspaceMissing") onFoundMissing();
+    else setLaunchError(result.error.message);
   }
 
   const name = agent?.displayName ?? "Claude Code";
-  const hint =
-    statusError !== null
+  const hint = workspace.missing
+    ? MISSING_HINT
+    : statusError !== null
       ? `Could not look for ${name}: ${statusError}`
       : agent !== null && agent.executable === null
         ? `${name} was not found on PATH. Set its location in Settings.`
         : null;
-  const canLaunch = agent !== null && agent.executable !== null && !launching;
+  const canLaunch = !workspace.missing && agent !== null && agent.executable !== null && !launching;
   const describedBy = hint !== null ? hintId : undefined;
 
   return (
     <div className="flex flex-col gap-4 p-6">
       <WorkspaceHeader workspace={workspace} onEdit={onEdit} onTogglePin={onTogglePin} />
+
+      {workspace.missing && (
+        <div className="flex items-center justify-between gap-4 rounded-md border border-brand/40 bg-brand/10 p-3 text-sm">
+          <p className="min-w-0 break-all">
+            Folder not found: <span className="font-mono">{workspace.path}</span>. Its stats and Sessions are kept.
+          </p>
+          <Button size="sm" variant="outline" className="shrink-0" onClick={onLocate}>
+            Locate…
+          </Button>
+        </div>
+      )}
 
       {/* A disabled button gets no hover events, so the tooltip sits on a wrapper. */}
       <div className="flex gap-2" title={hint ?? undefined}>

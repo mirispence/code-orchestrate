@@ -10,13 +10,16 @@ use crate::agents::TokenUsage;
 use crate::paths::NormalizedPath;
 use crate::store::{Session, Store, StoreError, Workspace};
 
-/// The Workspace a Session in `cwd` belongs to: the one whose path equals or
-/// is an ancestor of `cwd`, the deepest if several match.
+/// The Workspace a Session in `cwd` belongs to: the one with a current or
+/// former path that equals or is an ancestor of `cwd`, the deepest path
+/// winning if several match (spec §5.4, §6.5).
 pub fn owner<'a>(cwd: &NormalizedPath, workspaces: &'a [Workspace]) -> Option<&'a Workspace> {
     workspaces
         .iter()
-        .filter(|w| w.path.same_as(cwd) || w.path.is_ancestor_of(cwd))
-        .max_by_key(|w| w.path.as_str().len())
+        .flat_map(|w| std::iter::once(&w.path).chain(&w.former_paths).map(move |p| (w, p)))
+        .filter(|(_, p)| p.same_as(cwd) || p.is_ancestor_of(cwd))
+        .max_by_key(|(_, p)| p.as_str().len())
+        .map(|(w, _)| w)
 }
 
 /// A directory where Sessions ran that no Workspace covers and that has not

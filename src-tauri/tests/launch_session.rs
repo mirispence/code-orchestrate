@@ -46,7 +46,7 @@ fn fixture() -> Fixture {
     let claude = bin.path().join(exe);
     std::fs::write(&claude, "").unwrap();
     let store = Store::open_in_memory().unwrap();
-    let ws = add_workspace(&store, "App", workspace_dir.path().to_str().unwrap()).unwrap();
+    let ws = add_workspace(&store, "App", workspace_dir.path().to_str().unwrap()).unwrap().workspace;
     Fixture {
         store,
         agent: ClaudeCode::with_search_path(vec![bin.path().to_path_buf()]),
@@ -191,4 +191,21 @@ fn errors_reach_the_ui_as_kind_and_message() {
             "osError": "Access is denied.",
         })
     );
+}
+
+#[test]
+fn a_missing_workspace_does_not_launch_and_its_folder_is_not_created() {
+    let f = fixture();
+    std::fs::remove_dir(&f.workspace_path).unwrap();
+    let spawner = FakeSpawner::default();
+
+    let err = launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, f.workspace_id, &LaunchMode::New)
+        .unwrap_err();
+
+    assert_eq!(err, LaunchError::WorkspaceMissing { workspace_id: f.workspace_id, path: f.workspace_path.clone() });
+    assert!(spawner.spawned.into_inner().is_empty());
+    assert!(!std::path::Path::new(&f.workspace_path).exists());
+    let json = serde_json::to_value(&err).unwrap();
+    assert_eq!(json["kind"], "workspaceMissing");
+    assert_eq!(json["workspaceId"], f.workspace_id);
 }

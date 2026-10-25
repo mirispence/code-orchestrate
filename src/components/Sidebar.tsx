@@ -1,6 +1,7 @@
 import { Inbox, Plus, RefreshCw, Settings, Star } from "lucide-react";
 import { useId, useState } from "react";
 
+import { MissingBadge } from "@/components/MissingBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Workspace, WorkspaceStats } from "@/lib/api";
@@ -173,6 +174,7 @@ function WorkspaceList({
               selected={ws.id === selectedId}
               onSelect={() => onSelect(ws.id)}
             />
+
           </li>
         ))}
       </ul>
@@ -207,11 +209,12 @@ function WorkspaceRow({
       aria-labelledby={nameId}
       aria-describedby={statsId}
       data-workspace-name={ws.name}
-      title={ws.path}
+      title={ws.missing ? `Folder not found: ${ws.path}` : ws.path}
       onClick={onSelect}
       className={cn(
         "flex w-full flex-col rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent",
         selected && "bg-sidebar-accent font-medium",
+        ws.missing && "text-muted-foreground",
       )}
     >
       <span className="flex w-full items-center gap-1.5">
@@ -219,6 +222,7 @@ function WorkspaceRow({
           {ws.name}
         </span>
         {ws.pinned && <Star aria-label="Pinned" className="size-3.5 shrink-0 fill-brand text-brand" />}
+        {ws.missing && <MissingBadge className="ml-auto" />}
       </span>
       <span id={statsId} className="truncate text-xs font-normal text-muted-foreground">
         {rowStats(stats)}

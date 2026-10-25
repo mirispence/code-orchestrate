@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type Workspace, type WorkspaceError } from "@/lib/api";
+import { api, type Saved, type Workspace } from "@/lib/api";
 import { addTag, tagKey } from "@/lib/tags";
 
 type EditWorkspaceDialogProps = {
@@ -21,11 +21,12 @@ type EditWorkspaceDialogProps = {
   /** Tags any Workspace uses, for autocomplete. */
   tagsInUse: string[];
   onClose: () => void;
-  onSaved: (workspace: Workspace) => void;
+  /** `movedFrom` is set when the new path was taken off another Workspace's former paths. */
+  onSaved: (saved: Saved) => void;
   onRemoved: (id: number) => void;
 };
 
-/** Edit dialog: name, note, tags and Remove Workspace (spec §8.2, §6.2). */
+/** Edit dialog: name, path, tags, note, former paths and Remove Workspace (spec §8.2, §6.2). */
 export function EditWorkspaceDialog({ workspace, onClose, ...rest }: EditWorkspaceDialogProps) {
   return (
     <Dialog open={workspace !== null} onOpenChange={(open) => !open && onClose()}>
@@ -51,9 +52,12 @@ function EditWorkspaceForm({
   const [note, setNote] = useState(workspace.note ?? "");
   const [tags, setTags] = useState(workspace.tags);
   const [draftTag, setDraftTag] = useState("");
-  const [error, setError] = useState<WorkspaceError | null>(null);
+  const [path, setPath] = useState(workspace.path);
+  const [formerPaths, setFormerPaths] = useState(workspace.formerPaths);
+  const [error, setError] = useState<{ message: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const suggestionsId = useId();
+  const formerPathsId = useId();
 
   const suggestions = tagsInUse.filter((t) => !tags.some((own) => tagKey(own) === tagKey(t)));
 
@@ -62,17 +66,39 @@ function EditWorkspaceForm({
     setDraftTag("");
   }
 
+  async function locate() {
+    const picked = await api.pickFolder();
+    if (picked !== null) {
+      setPath(picked);
+      setError(null);
+    }
+  }
+
+  // Re-point first: a rejected path stops the save with nothing changed.
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
-    const result = await api.updateWorkspace(workspace.id, {
-      name: name.trim(),
-      note: note.trim(),
-      tags: addTag(tags, draftTag),
-    });
-    setSaving(false);
-    if (result.ok) onSaved(result.value);
-    else setError(result.error);
+    try {
+      let movedFrom: Saved["movedFrom"] = null;
+      if (path !== workspace.path) {
+        const moved = await api.repointWorkspace(workspace.id, path);
+        if (!moved.ok) return setError(moved.error);
+        movedFrom = moved.value.movedFrom;
+      }
+      for (const removed of workspace.formerPaths.filter((p) => !formerPaths.includes(p))) {
+        const result = await api.removeFormerPath(workspace.id, removed);
+        if (!result.ok) return setError(result.error);
+      }
+      const result = await api.updateWorkspace(workspace.id, {
+        name: name.trim(),
+        note: note.trim(),
+        tags: addTag(tags, draftTag),
+      });
+      if (result.ok) onSaved({ workspace: result.value, movedFrom });
+      else setError(result.error);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function remove() {
@@ -126,6 +152,45 @@ function EditWorkspaceForm({
           }}
         />
       </div>
+      <div className="grid gap-2">
+        <Label htmlFor="edit-workspace-path">Path</Label>
+        <div className="flex gap-2">
+          <Input
+            id="edit-workspace-path"
+            className="font-mono"
+            value={path}
+            onChange={(e) => {
+              setPath(e.target.value);
+              setError(null);
+            }}
+          />
+          <Button type="button" variant="outline" onClick={() => void locate()}>
+            Locate…
+          </Button>
+        </div>
+      </div>
+      {formerPaths.length > 0 && (
+        <div className="grid gap-2">
+          <span id={formerPathsId} className="text-sm font-medium">
+            Former paths
+          </span>
+          <ul aria-labelledby={formerPathsId} className="grid gap-1">
+            {formerPaths.map((former) => (
+              <li key={former} className="flex items-center justify-between gap-2 font-mono text-xs text-muted-foreground">
+                <span className="min-w-0 break-all">{former}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove former path ${former}`}
+                  className="shrink-0 rounded-full p-0.5 hover:bg-muted"
+                  onClick={() => setFormerPaths((current) => current.filter((p) => p !== former))}
+                >
+                  <X className="size-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="grid gap-2">
         <Label htmlFor="edit-workspace-tag">Tags</Label>
         {tags.length > 0 && (

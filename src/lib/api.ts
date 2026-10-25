@@ -16,6 +16,19 @@ export type Workspace = {
   createdAt: number;
   /** In the order added; unique case-insensitively (spec §6.2). */
   tags: string[];
+  /** Paths it was re-pointed away from, oldest first; they keep attributing Sessions (spec §6.5). */
+  formerPaths: string[];
+  /** The directory did not exist when the Workspace was last read (spec §6.3). */
+  missing: boolean;
+};
+
+/**
+ * A Workspace saved at a path. `movedFrom` names the Workspace that path was
+ * moved off, when it was one of its former paths (spec §6.2).
+ */
+export type Saved = {
+  workspace: Workspace;
+  movedFrom: { workspaceId: number; workspaceName: string } | null;
 };
 
 /** The edit dialog's fields. A blank note is saved as none. */
@@ -80,6 +93,7 @@ export type AddWorkspaceError =
   | { kind: "notFound"; message: string; path: string }
   | { kind: "notADirectory"; message: string; path: string }
   | { kind: "pathTaken"; message: string; workspaceId: number; workspaceName: string }
+  | { kind: "noSuchWorkspace"; message: string }
   | CommandError;
 
 /**
@@ -130,6 +144,7 @@ export type LaunchMode = "new" | "continue";
 export type LaunchError =
   | { kind: "executableNotFound"; message: string; name: string }
   | { kind: "workspaceNotFound"; message: string; workspaceId: number }
+  | { kind: "workspaceMissing"; message: string; workspaceId: number; path: string }
   | { kind: "spawnFailed"; message: string; program: string; osError: string }
   | { kind: "terminalNotConfigured"; message: string }
   | CommandError;
@@ -161,8 +176,17 @@ export const api = {
     return result.value;
   },
 
-  addWorkspace(name: string, path: string): Promise<Result<Workspace, AddWorkspaceError>> {
+  addWorkspace(name: string, path: string): Promise<Result<Saved, AddWorkspaceError>> {
     return call("add_workspace", { name, path });
+  },
+
+  /** Locate… or a path edit: the old path becomes a former path (spec §6.5). The folder must exist. */
+  repointWorkspace(id: number, path: string): Promise<Result<Saved, AddWorkspaceError>> {
+    return call("repoint_workspace", { id, path });
+  },
+
+  removeFormerPath(id: number, path: string): Promise<Result<Workspace, WorkspaceError>> {
+    return call("remove_former_path", { id, path });
   },
 
   updateWorkspace(id: number, edit: WorkspaceEdit): Promise<Result<Workspace, WorkspaceError>> {
