@@ -62,6 +62,25 @@ fn a_missing_executable_override_is_not_found() {
 }
 
 #[test]
+fn a_bare_name_override_is_looked_up_on_the_search_path_with_or_without_its_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = touch(&dir.path().join(if cfg!(windows) { "claude-beta.exe" } else { "claude-beta" }));
+    let search = || ClaudeCode::with_search_path(vec![dir.path().to_path_buf()]);
+
+    assert_eq!(search().with_executable("claude-beta".into()).resolve_executable(), Some(exe.clone()));
+    if cfg!(windows) {
+        assert_eq!(search().with_executable("claude-beta.exe".into()).resolve_executable(), Some(exe));
+    }
+}
+
+#[test]
+fn a_relative_path_override_is_not_found() {
+    // A relative path would mean something else in each Workspace directory.
+    let agent = ClaudeCode::on_path().with_executable(PathBuf::from("tools").join("claude.exe"));
+    assert_eq!(agent.resolve_executable(), None);
+}
+
+#[test]
 fn the_transcript_root_override_is_scanned_instead_of_the_default() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("cc");

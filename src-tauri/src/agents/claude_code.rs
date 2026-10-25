@@ -150,10 +150,16 @@ impl AgentAdapter for ClaudeCode {
     fn resolve_executable(&self) -> Option<String> {
         let found = match &self.executable {
             None => find_executable(EXECUTABLE_NAME, &self.search_dirs()),
-            Some(exe) if exe.components().count() > 1 || exe.is_absolute() => {
-                exe.is_file().then(|| exe.clone())
+            // Only an absolute path: a relative one would mean something
+            // else in each Workspace directory the command starts in.
+            Some(exe) if exe.is_absolute() => exe.is_file().then(|| exe.clone()),
+            Some(exe) if exe.components().count() > 1 => None,
+            Some(name) => {
+                let dirs = self.search_dirs();
+                // A name typed with its extension (`claude.exe`) is tried as is first.
+                let as_typed = name.extension().is_some().then(|| dirs.iter().map(|d| d.join(name)).find(|p| is_file(p)));
+                as_typed.flatten().or_else(|| find_executable(&name.to_string_lossy(), &dirs))
             }
-            Some(name) => find_executable(&name.to_string_lossy(), &self.search_dirs()),
         };
         found.map(|p| p.to_string_lossy().into_owned())
     }
