@@ -139,11 +139,11 @@ export default function App() {
         scanning={scan.scanning}
         onRefresh={scan.refresh}
       />
-      <main className="min-w-0 flex-1">
+      <main className="h-full min-w-0 flex-1 overflow-y-auto">
         {loadError !== null && (
           <div
             role="alert"
-            className="m-4 flex items-center justify-between gap-4 rounded-md border border-destructive/50 p-3 text-sm text-destructive"
+            className="mx-9 mt-6 flex items-center justify-between gap-4 rounded-lg border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
           >
             <span>Could not load Workspaces: {loadError}</span>
             <Button size="sm" variant="outline" onClick={() => void reload()}>
@@ -152,14 +152,14 @@ export default function App() {
           </div>
         )}
         {actionError !== null && (
-          <p role="alert" className="m-4 rounded-md border border-destructive/50 p-3 text-sm text-destructive">
+          <p role="alert" className="mx-9 mt-6 rounded-lg border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
             {actionError}
           </p>
         )}
         {notice !== null && (
           <div
             role="status"
-            className="m-4 flex items-center justify-between gap-4 rounded-md border border-brand/40 bg-brand/10 p-3 text-sm"
+            className="mx-9 mt-6 flex items-center justify-between gap-4 rounded-lg border border-brand/40 bg-brand-soft p-3 text-sm"
           >
             <span className="min-w-0 break-all">{notice}</span>
             <Button size="sm" variant="ghost" onClick={() => setNotice(null)}>

@@ -24,15 +24,15 @@ export function ResumeTable({ sessions, canLaunch, hintId, onResume }: ResumeTab
 
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">Resume a past Session</h3>
+      <h3 className="text-base font-semibold">Resume a past Session</h3>
       {sessions.length === 0 ? (
         <p className="text-sm text-muted-foreground">No Sessions yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+            <thead className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 font-medium">Title</th>
+                <th className="w-full px-3 py-2 font-medium">Title</th>
                 <th className="px-3 py-2 font-medium">ID</th>
                 <th className="px-3 py-2 font-medium">Started</th>
                 <th className="px-3 py-2 font-medium">Active time</th>
@@ -46,16 +46,16 @@ export function ResumeTable({ sessions, canLaunch, hintId, onResume }: ResumeTab
               {sessions.map((s) => {
                 const deleted = !s.transcriptExists;
                 return (
-                  <tr key={`${s.agentId}:${s.sessionId}`} className="border-t">
+                  <tr key={`${s.agentId}:${s.sessionId}`} className="border-b hover:bg-muted/50">
                     <td className="max-w-0 truncate px-3 py-2" title={s.title ?? undefined}>
                       {s.title ?? "Untitled"}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs" title={s.sessionId}>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={s.sessionId}>
                       {s.sessionId.slice(0, 8)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">{formatWhen(s.startedAt)}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{formatDuration(s.activeTimeMs)}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{formatTokens(headlineTokens(s.tokens))}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatWhen(s.startedAt)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatDuration(s.activeTimeMs)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatTokens(headlineTokens(s.tokens))}</td>
                     <td className="px-3 py-2 text-right">
                       {/* A disabled button gets no hover events, so the tooltip sits on a wrapper. */}
                       <span className="inline-block" title={deleted ? TRANSCRIPT_DELETED : undefined}>

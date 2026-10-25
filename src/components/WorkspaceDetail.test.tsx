@@ -262,3 +262,22 @@ describe("Resuming a past Session", () => {
     expect(await screen.findByRole("row", { name: /Fresh/ })).toBeInTheDocument();
   });
 });
+
+describe("Header", () => {
+  it("names the heading by the Workspace alone when pinned; the star is decorative", async () => {
+    render(
+      <WorkspaceDetail
+        workspace={{ ...ws, pinned: true }}
+        onEdit={vi.fn()}
+        onTogglePin={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onLocate={vi.fn()}
+        onFoundMissing={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "app", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unpin" })).toBeInTheDocument();
+    await screen.findByRole("button", { name: "New Session" });
+  });
+});

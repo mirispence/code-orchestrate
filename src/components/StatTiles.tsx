@@ -26,7 +26,7 @@ export function StatTiles({ stats }: { stats: WorkspaceStats }) {
 
   return (
     <div role="group" aria-label="Stats" className="flex flex-col gap-2">
-      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Tile label="Sessions">{stats.sessionCount}</Tile>
         <Tile label="Last used">{formatWhen(stats.lastUsed)}</Tile>
         <Tile label="Session time">{formatDuration(stats.sessionTimeMs)}</Tile>
@@ -61,9 +61,9 @@ export function StatTiles({ stats }: { stats: WorkspaceStats }) {
 /** A label under a big value (the label comes first in the DOM for screen readers). */
 function Tile({ label, title, children }: { label: string; title?: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col-reverse rounded-lg border p-3" title={title}>
+    <div className="flex flex-col-reverse rounded-lg border bg-card px-3.5 py-3 text-card-foreground" title={title}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-lg font-semibold">{children}</dd>
+      <dd className="text-xl font-semibold">{children}</dd>
     </div>
   );
 }
