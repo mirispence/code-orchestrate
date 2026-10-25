@@ -263,6 +263,33 @@ describe("Resuming a past Session", () => {
   });
 });
 
+describe("Agent capabilities (spec §3.2)", () => {
+  it("without resume, keeps the Session table but drops the Resume column and buttons", async () => {
+    mocked.agentStatus.mockResolvedValue(
+      status({ capabilities: { continue: true, resume: false, sessionHistory: true } }),
+    );
+    mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [session({ title: "Kept" })] });
+    renderDetail();
+
+    await waitFor(() => expect(mocked.agentStatus).toHaveBeenCalled());
+    expect(await screen.findByRole("row", { name: /Kept/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Resume" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Resume/ })).not.toBeInTheDocument();
+  });
+
+  it("without session history, hides the stat tiles and the Session table", async () => {
+    mocked.agentStatus.mockResolvedValue(
+      status({ capabilities: { continue: true, resume: true, sessionHistory: false } }),
+    );
+    mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [session({ title: "Hidden" })] });
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "New Session" })).toBeEnabled());
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
 describe("Header", () => {
   it("names the heading by the Workspace alone when pinned; the star is decorative", async () => {
     render(
