@@ -6,6 +6,7 @@ pub mod attribution;
 pub mod commands;
 pub mod launch;
 pub mod paths;
+pub mod repository;
 pub mod scan;
 pub mod settings;
 pub mod store;
@@ -81,6 +82,8 @@ pub fn run() {
             commands::restore_dismissed_path,
             commands::rescan_transcripts,
             commands::open_data_folder,
+            commands::workspace_repository,
+            commands::open_workspace_repository,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

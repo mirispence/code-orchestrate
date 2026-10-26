@@ -7,7 +7,16 @@ import { api, type AgentStatus, type Session, type Workspace } from "@/lib/api";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
-  return { ...actual, api: { agentStatus: vi.fn(), launchSession: vi.fn(), listWorkspaceSessions: vi.fn() } };
+  return {
+    ...actual,
+    api: {
+      agentStatus: vi.fn(),
+      launchSession: vi.fn(),
+      listWorkspaceSessions: vi.fn(),
+      workspaceRepository: vi.fn(),
+      openWorkspaceRepository: vi.fn(),
+    },
+  };
 });
 
 const mocked = vi.mocked(api);
@@ -44,6 +53,8 @@ beforeEach(() => {
   mocked.agentStatus.mockResolvedValue(status());
   mocked.launchSession.mockResolvedValue({ ok: true, value: undefined });
   mocked.listWorkspaceSessions.mockResolvedValue({ ok: true, value: [] });
+  mocked.workspaceRepository.mockResolvedValue(null);
+  mocked.openWorkspaceRepository.mockResolvedValue({ ok: true, value: null });
 });
 
 describe("Launching from a Workspace", () => {
@@ -351,5 +362,88 @@ describe("Header", () => {
     expect(screen.getByRole("heading", { name: "app", level: 2 })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unpin" })).toBeInTheDocument();
     await screen.findByRole("button", { name: "New Session" });
+  });
+});
+
+describe("Git repository (#32)", () => {
+  const repository = { name: "owner/repo", url: "https://github.com/owner/repo" };
+
+  it("shows the repository under the path and opens its page on click", async () => {
+    mocked.workspaceRepository.mockResolvedValue(repository);
+    const user = userEvent.setup();
+    renderDetail();
+
+    const link = await screen.findByRole("button", { name: "owner/repo" });
+    expect(link).toHaveAttribute("title", "Open https://github.com/owner/repo");
+    await user.click(link);
+
+    expect(mocked.workspaceRepository).toHaveBeenCalledWith(7);
+    expect(mocked.openWorkspaceRepository).toHaveBeenCalledWith(7);
+  });
+
+  it("shows nothing when the folder has no repository with a page", async () => {
+    renderDetail();
+
+    await waitFor(() => expect(mocked.workspaceRepository).toHaveBeenCalledWith(7));
+    await screen.findByRole("button", { name: "New Session" });
+    expect(screen.queryByRole("button", { name: "owner/repo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows nothing, and no error, when looking up the repository fails", async () => {
+    mocked.workspaceRepository.mockRejectedValue(new Error("git exploded"));
+    renderDetail();
+
+    await waitFor(() => expect(mocked.workspaceRepository).toHaveBeenCalled());
+    await screen.findByRole("button", { name: "New Session" });
+    expect(screen.queryByText(/git exploded/)).not.toBeInTheDocument();
+  });
+
+  it("does not look up the repository of a Missing Workspace", async () => {
+    mocked.workspaceRepository.mockResolvedValue(repository);
+    render(
+      <WorkspaceDetail
+        workspace={{ ...ws, missing: true }}
+        onEdit={vi.fn()}
+        onTogglePin={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onLocate={vi.fn()}
+        onFoundMissing={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "Locate…" });
+    expect(mocked.workspaceRepository).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "owner/repo" })).not.toBeInTheDocument();
+  });
+
+  it("shows a failed open as a dismissible error toast", async () => {
+    mocked.workspaceRepository.mockResolvedValue(repository);
+    mocked.openWorkspaceRepository.mockResolvedValue({
+      ok: false,
+      error: { kind: "noRepository", message: "This folder no longer has a git remote with a web page" },
+    });
+    const user = userEvent.setup();
+    renderDetail();
+
+    await user.click(await screen.findByRole("button", { name: "owner/repo" }));
+
+    const toast = await screen.findByRole("alert");
+    expect(toast).toHaveTextContent("This folder no longer has a git remote with a web page");
+    expect(within(toast).queryByRole("button", { name: "Open Settings" })).not.toBeInTheDocument();
+    await user.click(within(toast).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("drops the previous Workspace's repository when another is shown", async () => {
+    mocked.workspaceRepository.mockResolvedValueOnce(repository).mockReturnValueOnce(new Promise(() => {}));
+    const props = { onEdit: vi.fn(), onTogglePin: vi.fn(), onOpenSettings: vi.fn(), onLocate: vi.fn(), onFoundMissing: vi.fn() };
+    const { rerender } = render(<WorkspaceDetail workspace={ws} {...props} />);
+    await screen.findByRole("button", { name: "owner/repo" });
+
+    rerender(<WorkspaceDetail workspace={{ ...ws, id: 8, name: "other" }} {...props} />);
+
+    expect(screen.queryByRole("button", { name: "owner/repo" })).not.toBeInTheDocument();
+    await waitFor(() => expect(mocked.workspaceRepository).toHaveBeenLastCalledWith(8));
   });
 });

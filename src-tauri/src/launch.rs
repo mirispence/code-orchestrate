@@ -120,6 +120,12 @@ fn resume_cwd(store: &Store, workspace: &Workspace, session_id: &str) -> Result<
 /// Explorer exits non-zero even when it opens the folder, so only a failure
 /// to start counts, and nothing waits for it.
 pub fn open_folder(spawner: &dyn Spawner, dir: &str) -> io::Result<()> {
+    open_with_system(spawner, dir)
+}
+
+/// Hand a folder or URL to the system opener: a folder shows in the file
+/// manager, an `https://` URL in the default browser.
+pub fn open_with_system(spawner: &dyn Spawner, target: &str) -> io::Result<()> {
     let program = if cfg!(windows) {
         "explorer"
     } else if cfg!(target_os = "macos") {
@@ -127,7 +133,7 @@ pub fn open_folder(spawner: &dyn Spawner, dir: &str) -> io::Result<()> {
     } else {
         "xdg-open"
     };
-    spawner.spawn(&TerminalCommand { program: program.into(), args: vec![dir.into()], current_dir: None })
+    spawner.spawn(&TerminalCommand { program: program.into(), args: vec![target.into()], current_dir: None })
 }
 
 /// Settings › Terminal › Test: run the Agent's version command (`claude
