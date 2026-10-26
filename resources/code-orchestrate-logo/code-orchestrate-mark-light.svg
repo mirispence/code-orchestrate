@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Code Orchestrate">
+<path d="M38 32 L14 60 L38 88" fill="none" stroke="#F7F8FA" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M82 32 L106 60 L82 88" fill="none" stroke="#F7F8FA" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M46 74 L60 46 L74 66" fill="none" stroke="#0E9F8E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="46" cy="74" r="6.5" fill="#0E9F8E"/>
+<circle cx="60" cy="46" r="7.5" fill="#F2A33A"/>
+<circle cx="74" cy="66" r="6.5" fill="#0E9F8E"/>
+</svg>
