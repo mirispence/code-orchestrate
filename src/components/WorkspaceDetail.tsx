@@ -1,12 +1,20 @@
 import { useEffect, useId, useState } from "react";
-import { Play, RotateCw, Star } from "lucide-react";
+import { GitBranch, Play, RotateCw, Star } from "lucide-react";
 
 import { ErrorToast } from "@/components/ErrorToast";
 import { ResumeTable } from "@/components/ResumeTable";
 import { StatTiles } from "@/components/StatTiles";
 import { TagList } from "@/components/TagList";
 import { Button } from "@/components/ui/button";
-import { api, type AgentStatus, type LaunchMode, type Session, type Workspace, type WorkspaceStats } from "@/lib/api";
+import {
+  api,
+  type AgentStatus,
+  type LaunchMode,
+  type Repository,
+  type Session,
+  type Workspace,
+  type WorkspaceStats,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type WorkspaceDetailProps = {
@@ -49,7 +57,9 @@ export function WorkspaceDetail({
   const [agent, setAgent] = useState<AgentStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
-  const [launchError, setLaunchError] = useState<string | null>(null);
+  // One toast at a time; a launch failure points to Settings, a repository one does not.
+  const [toast, setToast] = useState<{ message: string; openSettings: boolean } | null>(null);
+  const [repository, setRepository] = useState<{ workspaceId: number; value: Repository } | null>(null);
   const [sessions, setSessions] = useState<{ workspaceId: number; list: Session[] } | null>(null);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const hintId = useId();
@@ -82,6 +92,31 @@ export function WorkspaceDetail({
     };
   }, [workspace]);
 
+  // Resolved on each Workspace reload, like the Agent status. Any failure, or
+  // a slow git, just leaves it hidden (#32).
+  useEffect(() => {
+    if (workspace.missing) {
+      setRepository(null);
+      return;
+    }
+    let current = true;
+    const workspaceId = workspace.id;
+    // `then` also turns a synchronous throw into a rejection.
+    Promise.resolve()
+      .then(() => api.workspaceRepository(workspaceId))
+      .then(
+        (value) => {
+          if (current) setRepository(value ? { workspaceId, value } : null);
+        },
+        () => {
+          if (current) setRepository(null);
+        },
+      );
+    return () => {
+      current = false;
+    };
+  }, [workspace]);
+
   // Re-read whenever the stats are (each reload after a scan or an edit).
   useEffect(() => {
     let current = true;
@@ -105,13 +140,21 @@ export function WorkspaceDetail({
 
   async function launch(mode: LaunchMode) {
     setLaunching(true);
-    setLaunchError(null);
+    setToast(null);
     const result = await api.launchSession(workspace.id, mode);
     setLaunching(false);
     if (result.ok) return;
     // The backend re-checks the folder on every click; the banner then explains it.
     if (result.error.kind === "workspaceMissing") onFoundMissing();
-    else setLaunchError(result.error.message);
+    else setToast({ message: result.error.message, openSettings: true });
+  }
+
+  async function openRepository() {
+    setToast(null);
+    const result = await api.openWorkspaceRepository(workspace.id);
+    if (result.ok) return;
+    if (result.error.kind === "workspaceMissing") onFoundMissing();
+    else setToast({ message: result.error.message, openSettings: false });
   }
 
   const name = agent?.displayName ?? "Claude Code";
@@ -127,7 +170,13 @@ export function WorkspaceDetail({
 
   return (
     <div className="flex max-w-5xl flex-col gap-5 px-9 pt-7 pb-12">
-      <WorkspaceHeader workspace={workspace} onEdit={onEdit} onTogglePin={onTogglePin} />
+      <WorkspaceHeader
+        workspace={workspace}
+        repository={repository?.workspaceId === workspace.id ? repository.value : null}
+        onOpenRepository={() => void openRepository()}
+        onEdit={onEdit}
+        onTogglePin={onTogglePin}
+      />
 
       {workspace.missing && (
         <div className="flex items-center justify-between gap-4 rounded-lg border border-brand/40 bg-brand-soft p-3 text-sm">
@@ -191,12 +240,11 @@ export function WorkspaceDetail({
         </>
       )}
 
-      {launchError !== null && (
+      {toast !== null && (
         <ErrorToast
-          message={launchError}
-          actionLabel="Open Settings"
-          onAction={onOpenSettings}
-          onDismiss={() => setLaunchError(null)}
+          message={toast.message}
+          {...(toast.openSettings && { actionLabel: "Open Settings", onAction: onOpenSettings })}
+          onDismiss={() => setToast(null)}
         />
       )}
     </div>
@@ -205,9 +253,14 @@ export function WorkspaceDetail({
 
 function WorkspaceHeader({
   workspace,
+  repository,
+  onOpenRepository,
   onEdit,
   onTogglePin,
-}: Pick<WorkspaceDetailProps, "workspace" | "onEdit" | "onTogglePin">) {
+}: Pick<WorkspaceDetailProps, "workspace" | "onEdit" | "onTogglePin"> & {
+  repository: Repository | null;
+  onOpenRepository: () => void;
+}) {
   return (
     <header className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-4">
@@ -218,6 +271,18 @@ function WorkspaceHeader({
             <span className="min-w-0">{workspace.name}</span>
           </h2>
           <p className="font-mono text-xs break-all text-muted-foreground">{workspace.path}</p>
+          {repository !== null && (
+            // A button, not a link: the backend opens the page (ADR 0001).
+            <button
+              type="button"
+              title={`Open ${repository.url}`}
+              className="flex w-fit items-center gap-1 text-xs text-brand underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+              onClick={onOpenRepository}
+            >
+              <GitBranch aria-hidden className="size-3.5" />
+              {repository.name}
+            </button>
+          )}
         </div>
         <div className="flex shrink-0 gap-1">
           <Button size="sm" variant="ghost" onClick={onTogglePin}>

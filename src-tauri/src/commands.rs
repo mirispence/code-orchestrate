@@ -13,6 +13,7 @@ use crate::agents::claude_code::{ClaudeCode, ExecutableStatus, TranscriptRootSta
 use crate::paths::{NormalizedPath, normalize};
 use crate::agents::{self, AgentStatus, LaunchMode};
 use crate::launch::{self, CustomTemplate, LaunchError, OsSpawner, Terminal};
+use crate::repository::{self, OsGit, Repository, RepositoryError};
 use crate::store::{Session, Store, Workspace, WorkspaceEdit};
 use crate::workspaces::{self, AddWorkspaceError, Saved, WorkspaceError};
 
@@ -374,4 +375,31 @@ pub async fn test_terminal(
         launch::test_terminal(&agent(&settings), &Terminal::Custom(template), &OsSpawner, &home)
     })
     .await?
+}
+
+/// The Workspace's git repository for the detail header (#32), or `null`.
+#[tauri::command]
+pub async fn workspace_repository(
+    store: State<'_, AppStore>,
+    workspace_id: i64,
+) -> Result<Option<Repository>, RepositoryError> {
+    let workspace = read_workspace(&store, workspace_id).await?;
+    blocking(RepositoryError::Internal, move || repository::workspace_repository(&workspace, &OsGit)).await
+}
+
+/// Open the Workspace's repository page in the default browser. Takes the id,
+/// not a URL: the page is re-resolved here (ADR 0001).
+#[tauri::command]
+pub async fn open_workspace_repository(store: State<'_, AppStore>, workspace_id: i64) -> Result<(), RepositoryError> {
+    let workspace = read_workspace(&store, workspace_id).await?;
+    blocking(RepositoryError::Internal, move || {
+        repository::open_workspace_repository(&workspace, &OsGit, &OsSpawner)
+    })
+    .await?
+}
+
+/// Read the Workspace under the store lock; git then runs without it, so a
+/// slow git never holds up other commands.
+async fn read_workspace(store: &AppStore, workspace_id: i64) -> Result<Workspace, RepositoryError> {
+    with_store(store, RepositoryError::Internal, move |s| repository::get_workspace(s, workspace_id)).await
 }

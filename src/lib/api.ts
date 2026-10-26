@@ -178,6 +178,17 @@ export type LaunchError =
   | { kind: "terminalNotConfigured"; message: string }
   | CommandError;
 
+/** A Workspace's git repository: its remote's web page (#32). */
+export type Repository = { name: string; url: string };
+
+export type RepositoryError =
+  | { kind: "workspaceNotFound"; message: string; workspaceId: number }
+  | { kind: "workspaceMissing"; message: string; workspaceId: number; path: string }
+  /** The remote went away or changed since it was shown. */
+  | { kind: "noRepository"; message: string }
+  | { kind: "openFailed"; message: string; osError: string }
+  | CommandError;
+
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 /** Normalise a rejected `invoke` into a `{ kind, message }` error. */
@@ -259,6 +270,18 @@ export const api = {
   /** Open a terminal running the Agent in the Workspace's directory. */
   launchSession(workspaceId: number, mode: LaunchMode): Promise<Result<void, LaunchError>> {
     return call("launch_session", { workspaceId, mode });
+  },
+
+  /** The Workspace's git repository, or `null` (no repository, no usable remote, no git). Throws on an internal error. */
+  async workspaceRepository(workspaceId: number): Promise<Repository | null> {
+    const result = await call<Repository | null, RepositoryError>("workspace_repository", { workspaceId });
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  },
+
+  /** Open the Workspace's repository page in the default browser; the backend resolves the URL. */
+  openWorkspaceRepository(workspaceId: number): Promise<Result<null, RepositoryError>> {
+    return call("open_workspace_repository", { workspaceId });
   },
 
   /** Suggestions computed from the stored Sessions. Throws on an internal error. */
