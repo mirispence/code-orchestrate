@@ -22,12 +22,13 @@ pub trait Git {
 /// the only remote when there is no `origin`. `None` when there is none, the
 /// folder is not in a repository or git cannot run.
 pub fn find(git: &dyn Git, dir: &Path) -> Option<Repository> {
-    // Lines are `name<TAB>url (fetch)` and `name<TAB>url (push)`.
+    // Lines are `name<TAB>url (fetch)` and `name<TAB>url (push)`; URLs have no spaces.
     let stdout = git.run(dir, &["remote", "-v"])?;
     let mut remotes: Vec<(&str, &str)> = Vec::new();
     for line in stdout.lines() {
         let Some((name, rest)) = line.split_once('\t') else { continue };
-        let Some(url) = rest.strip_suffix(" (fetch)") else { continue };
+        // A partial clone adds its filter after it: `(fetch) [blob:none]`.
+        let Some((url, _)) = rest.split_once(" (fetch)") else { continue };
         remotes.push((name, url));
     }
     let url = match remotes.iter().find(|(name, _)| *name == "origin") {
@@ -147,17 +148,17 @@ pub fn web_page(remote: &str) -> Option<Repository> {
     let remote = remote.trim();
     if let Some(rest) = remote.strip_prefix("https://") {
         let (authority, path) = rest.split_once('/')?;
-        return page_at("https", without_user(authority), path);
+        return page_at(without_user(authority), path);
     }
     if let Some(rest) = remote.strip_prefix("ssh://") {
         let (authority, path) = rest.split_once('/')?;
         // The SSH port is not the web server's.
         let host = without_user(authority);
         let host = host.split_once(':').map_or(host, |(host, _port)| host);
-        return page_at("https", host, path);
+        return page_at(host, path);
     }
     let (host, path) = scp_like(remote)?;
-    page_at("https", host, path)
+    page_at(host, path)
 }
 
 /// `[user@]host:path`, git's shorthand for SSH. Like git, a slash before the
@@ -181,7 +182,7 @@ fn without_user(authority: &str) -> &str {
 /// The page for `path` on `host` (`name[:port]`). The path must be
 /// `owner/repo` or deeper. Only plain host and path characters are accepted,
 /// since the URL is handed to the system opener as an argument.
-fn page_at(scheme: &str, host: &str, path: &str) -> Option<Repository> {
+fn page_at(host: &str, path: &str) -> Option<Repository> {
     let (name, port) = host.split_once(':').map_or((host, None), |(name, port)| (name, Some(port)));
     // A host without a dot is a drive letter, `localhost` or an SSH alias
     // from `~/.ssh/config`, none of which has a page under that name.
@@ -201,7 +202,20 @@ fn page_at(scheme: &str, host: &str, path: &str) -> Option<Repository> {
     if segments.len() < 2 || !segments.iter().all(segment_ok) {
         return None;
     }
-    Some(Repository { name: path.to_owned(), url: format!("{scheme}://{host}/{path}") })
+    match name {
+        // Azure DevOps SSH paths are `v3/org/project/repo`; the page is
+        // `dev.azure.com/org/project/_git/repo`.
+        "ssh.dev.azure.com" => match segments[..] {
+            ["v3", org, project, repo] => Some(Repository {
+                name: format!("{org}/{project}/{repo}"),
+                url: format!("https://dev.azure.com/{org}/{project}/_git/{repo}"),
+            }),
+            _ => None,
+        },
+        // Its older SSH host: the page's host depends on the organisation.
+        "vs-ssh.visualstudio.com" => None,
+        _ => Some(Repository { name: path.to_owned(), url: format!("https://{host}/{path}") }),
+    }
 }
 
 #[cfg(test)]
@@ -232,6 +246,14 @@ mod tests {
     #[test]
     fn the_only_remote_is_used_when_there_is_no_origin() {
         let stdout = "upstream\thttps://github.com/team/app.git (fetch)\nupstream\thttps://github.com/team/app.git (push)\n";
+        assert_eq!(found(Some(stdout)), Some("https://github.com/team/app".to_owned()));
+    }
+
+    /// A partial clone annotates its fetch line with the filter.
+    #[test]
+    fn origin_is_found_in_a_partial_clone() {
+        let stdout = "fork\tgit@github.com:me/app.git (fetch)\nfork\tgit@github.com:me/app.git (push)\n\
+                      origin\tgit@github.com:team/app.git (fetch) [blob:none]\norigin\tgit@github.com:team/app.git (push)\n";
         assert_eq!(found(Some(stdout)), Some("https://github.com/team/app".to_owned()));
     }
 
@@ -279,6 +301,24 @@ mod tests {
         assert_eq!(
             page("https://git.example.com:8443/team/app.git"),
             Some(("team/app".to_owned(), "https://git.example.com:8443/team/app".to_owned())),
+        );
+    }
+
+    /// Azure DevOps SSH paths carry a `v3/` prefix and its pages a `_git` segment.
+    #[test]
+    fn azure_devops_ssh_remote_becomes_its_web_page() {
+        let expected = Some(("org/project/repo".to_owned(), "https://dev.azure.com/org/project/_git/repo".to_owned()));
+        assert_eq!(page("git@ssh.dev.azure.com:v3/org/project/repo"), expected);
+        assert_eq!(page("ssh://git@ssh.dev.azure.com/v3/org/project/repo"), expected);
+        assert_eq!(page("git@ssh.dev.azure.com:v3/org/repo"), None);
+        assert_eq!(page("git@vs-ssh.visualstudio.com:v3/org/project/repo"), None);
+    }
+
+    #[test]
+    fn azure_devops_https_remote_is_already_its_web_page() {
+        assert_eq!(
+            page("https://org@dev.azure.com/org/project/_git/repo"),
+            Some(("org/project/_git/repo".to_owned(), "https://dev.azure.com/org/project/_git/repo".to_owned())),
         );
     }
 
