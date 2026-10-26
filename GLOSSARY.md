@@ -19,3 +19,7 @@ _Avoid_: Run, chat
 **Suggestion**:
 A directory where an Agent's Sessions have run that is not yet a Workspace. The user accepts it by naming it, which makes it a Workspace, or dismisses it so it stays hidden.
 _Avoid_: Candidate, import
+
+**Repository** (shorthand: **repo**):
+The git (source control) repository a Workspace's directory is in. It is shown by its remote as `owner/name`, and its web page can be opened from the Workspace. A Workspace is a directory, not a Repository: several Workspaces can sit in one Repository, and a Workspace need not be in one.
+_Avoid_: Remote (that is where the Repository is hosted), project
