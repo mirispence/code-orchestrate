@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="resources/code-orchestrate-logo/png/mark-light-512.png">
+    <img src="resources/code-orchestrate-logo/png/mark-512.png" alt="Code Orchestrate logo" width="128">
+  </picture>
+</p>
+
 # Code Orchestrate
 
 A desktop app for launching and tracking coding Agent Sessions per Workspace. See

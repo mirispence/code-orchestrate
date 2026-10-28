@@ -1,6 +1,8 @@
 import { Inbox, Plus, RefreshCw, Settings, Star } from "lucide-react";
 import { useId, useState } from "react";
 
+import markLightUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark-light.svg";
+import markUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark.svg";
 import { MissingBadge } from "@/components/MissingBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,7 +63,14 @@ export function Sidebar({
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex flex-col gap-2.5 p-3.5 pb-2">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-sm font-semibold">Code Orchestrate</h1>
+          <h1 className="flex items-center gap-1.5 text-sm font-semibold">
+            {/* Decorative: the title text is the accessible name. The app theme follows prefers-color-scheme. */}
+            <picture className="shrink-0">
+              <source srcSet={markLightUrl} media="(prefers-color-scheme: dark)" />
+              <img src={markUrl} alt="" className="size-5" />
+            </picture>
+            Code Orchestrate
+          </h1>
           <Button
             size="icon"
             variant="ghost"
