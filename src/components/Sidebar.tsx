@@ -11,6 +11,10 @@ import { cn } from "@/lib/utils";
 import { filterWorkspaces } from "@/lib/workspaceFilter";
 import { sortByLastUsed } from "@/lib/workspaceSort";
 
+// Logo sources live outside src/ with the other brand files.
+import markOnDarkUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark-light.svg";
+import markOnLightUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark.svg";
+
 type SidebarProps = {
   workspaces: Workspace[];
   /** Stats by Workspace id; drives row text and order. */
@@ -61,7 +65,14 @@ export function Sidebar({
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex flex-col gap-2.5 p-3.5 pb-2">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-sm font-semibold">Code Orchestrate</h1>
+          <h1 className="flex items-center gap-1.5 text-sm font-semibold">
+            {/* Decorative: the title text is the accessible name. The app theme follows prefers-color-scheme. */}
+            <picture className="shrink-0">
+              <source srcSet={markOnDarkUrl} media="(prefers-color-scheme: dark)" />
+              <img src={markOnLightUrl} alt="" className="size-5" />
+            </picture>
+            Code Orchestrate
+          </h1>
           <Button
             size="icon"
             variant="ghost"

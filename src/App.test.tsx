@@ -101,6 +101,17 @@ describe("App shell", () => {
     expect(screen.getAllByRole("button", { name: /add workspace/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /suggestions/i }).length).toBeGreaterThan(0);
   });
+
+  it("shows the Code Orchestrate mark beside the title, hidden from screen readers", () => {
+    render(<App />);
+
+    const heading = screen.getByRole("heading", { name: "Code Orchestrate" });
+    // Decorative images have no role, so query the DOM for the mark itself.
+    const marks = heading.querySelectorAll("img");
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveAttribute("alt", "");
+    expect(screen.queryByRole("img", { name: /code orchestrate/i })).not.toBeInTheDocument();
+  });
 });
 
 describe("Workspace list", () => {
