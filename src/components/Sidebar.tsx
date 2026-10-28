@@ -1,8 +1,6 @@
 import { Inbox, Plus, RefreshCw, Settings, Star } from "lucide-react";
 import { useId, useState } from "react";
 
-import markLightUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark-light.svg";
-import markUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark.svg";
 import { MissingBadge } from "@/components/MissingBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +10,10 @@ import { tagKey, tagsInUse } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 import { filterWorkspaces } from "@/lib/workspaceFilter";
 import { sortByLastUsed } from "@/lib/workspaceSort";
+
+// Logo sources live outside src/ with the other brand files.
+import markOnDarkUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark-light.svg";
+import markOnLightUrl from "../../resources/code-orchestrate-logo/code-orchestrate-mark.svg";
 
 type SidebarProps = {
   workspaces: Workspace[];
@@ -66,8 +68,8 @@ export function Sidebar({
           <h1 className="flex items-center gap-1.5 text-sm font-semibold">
             {/* Decorative: the title text is the accessible name. The app theme follows prefers-color-scheme. */}
             <picture className="shrink-0">
-              <source srcSet={markLightUrl} media="(prefers-color-scheme: dark)" />
-              <img src={markUrl} alt="" className="size-5" />
+              <source srcSet={markOnDarkUrl} media="(prefers-color-scheme: dark)" />
+              <img src={markOnLightUrl} alt="" className="size-5" />
             </picture>
             Code Orchestrate
           </h1>

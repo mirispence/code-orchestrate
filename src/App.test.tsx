@@ -106,9 +106,10 @@ describe("App shell", () => {
     render(<App />);
 
     const heading = screen.getByRole("heading", { name: "Code Orchestrate" });
+    // Decorative images have no role, so query the DOM for the mark itself.
     const marks = heading.querySelectorAll("img");
-    expect(marks.length).toBeGreaterThan(0);
-    marks.forEach((mark) => expect(mark).toHaveAttribute("alt", ""));
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveAttribute("alt", "");
     expect(screen.queryByRole("img", { name: /code orchestrate/i })).not.toBeInTheDocument();
   });
 });
