@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::{AgentAdapter, Capabilities, LaunchCommand, LaunchCommandError, LaunchMode, SessionSummary, SourceKey};
-use crate::launch::escape_for_cmd;
+use crate::launch::{escape_for_cmd, reaches_cmd_quoted};
 use crate::paths::NormalizedPath;
 
 /// The executable's bare name, looked up on the search path.
@@ -202,7 +202,14 @@ impl ClaudeCode {
         Ok(if is_batch_script(&executable) {
             // A `.cmd` (npm shim) cannot be the direct target of process
             // creation; `cmd /k` runs it and keeps the tab open afterwards.
-            let mut args = vec!["/k".to_owned(), escape_for_cmd(&executable)];
+            let mut args = vec!["/k".to_owned()];
+            // A quoted path right after `/k` loses its quotes when it holds a
+            // special character such as `&`, so `@` goes first. Not `call`,
+            // which doubles carets, even inside quotes.
+            if reaches_cmd_quoted(&executable) {
+                args.push("@".to_owned());
+            }
+            args.push(escape_for_cmd(&executable));
             args.extend(agent_args);
             LaunchCommand { program: "cmd".to_owned(), args, cwd }
         } else {

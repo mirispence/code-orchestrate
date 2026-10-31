@@ -119,6 +119,26 @@ fn cmd_metacharacters_in_an_unquoted_shim_path_are_caret_escaped() {
     assert_eq!(cmd.args, ["/k".to_owned(), shim.replace('&', "^&")]);
 }
 
+/// cmd strips the outer quotes of a command line that starts with a quote and
+/// holds a special character, splitting `Tools & Bin` at the `&`. `@` keeps
+/// the quoted path away from the start of the line. (Checked by hand against
+/// real cmd.exe and wt.exe, with `&` and with `^`: a stub `.cmd` runs. A
+/// generated npm shim still fails there, on its own unquoted `SET dp0=%~dp0`.)
+#[cfg(windows)]
+#[test]
+fn a_shim_path_with_whitespace_follows_an_at_sign_so_cmd_keeps_its_quotes() {
+    let root = tempfile::tempdir().unwrap();
+    let bin = root.path().join("Tools & Bin");
+    std::fs::create_dir(&bin).unwrap();
+    let shim = touch(&bin, "claude.cmd");
+    let agent = ClaudeCode::with_search_path(vec![bin]);
+
+    let cmd = agent.launch_command(&workspace(), &LaunchMode::Continue).unwrap();
+
+    assert_eq!(cmd.program, "cmd");
+    assert_eq!(cmd.args, ["/k".to_owned(), "@".to_owned(), shim, "--continue".to_owned()]);
+}
+
 /// The Console window preset runs the shim through two cmd parses (its own
 /// `cmd /c start`, then the adapter's `cmd /k`), each stripping one level of
 /// carets, so `^` reaches it as `^^^^` and `&` as `^^^&`. (Checked by hand
