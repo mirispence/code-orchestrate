@@ -267,13 +267,18 @@ fn escape_for_wt(arg: &str) -> String {
     arg.replace(';', r"\;")
 }
 
+/// Whether `Command` quotes this argument on the way to `cmd`.
+pub(crate) fn reaches_cmd_quoted(arg: &str) -> bool {
+    arg.chars().any(char::is_whitespace)
+}
+
 /// `cmd` reparses its command line, so an unquoted `&`, `|`, `<`, `>` or `^`
 /// (legal in a Windows user name, hence in an npm prefix) would split or
 /// redirect it. An argument without whitespace reaches cmd unquoted, so
 /// caret-escape those; one with whitespace is quoted, and inside quotes they
 /// are literal. Each cmd layer strips one level, so nested layers compose.
 pub(crate) fn escape_for_cmd(arg: &str) -> String {
-    if arg.chars().any(char::is_whitespace) {
+    if reaches_cmd_quoted(arg) {
         return arg.to_owned();
     }
     let mut escaped = String::with_capacity(arg.len());
