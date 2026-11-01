@@ -5,6 +5,7 @@ pub mod agents;
 pub mod attribution;
 pub mod commands;
 pub mod launch;
+pub mod launch_env;
 pub mod paths;
 pub mod repository;
 pub mod scan;

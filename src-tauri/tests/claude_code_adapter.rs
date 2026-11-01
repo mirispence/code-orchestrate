@@ -163,7 +163,7 @@ fn a_console_window_escapes_an_npm_shim_path_once_per_cmd_layer() {
     let args = ["/c", "start", "", "/D", r"C:\code\my project", "cmd", "/k", &shim, "--resume", "s1"];
     assert_eq!(
         wrapped,
-        TerminalCommand { program: "cmd.exe".into(), args: args.map(str::to_owned).to_vec(), current_dir: None }
+        TerminalCommand { program: "cmd.exe".into(), args: args.map(str::to_owned).to_vec(), current_dir: None, env: None }
     );
 }
 

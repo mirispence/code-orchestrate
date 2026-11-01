@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use super::{AgentAdapter, Capabilities, LaunchCommand, LaunchCommandError, LaunchMode, SessionSummary, SourceKey};
 use crate::launch::{escape_for_cmd, reaches_cmd_quoted};
+use crate::launch_env;
 use crate::paths::NormalizedPath;
 
 /// The executable's bare name, looked up on the search path.
@@ -16,7 +17,7 @@ pub const EXECUTABLE_NAME: &str = "claude";
 /// Where to look for `claude`.
 #[derive(Debug, Clone)]
 enum SearchPath {
-    /// The process's `PATH`, read on every lookup.
+    /// The `PATH` a launch gets, read on every lookup.
     Environment,
     /// Fixed directories (tests).
     Dirs(Vec<PathBuf>),
@@ -56,7 +57,7 @@ pub enum TranscriptRootStatus {
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl ClaudeCode {
-    /// Resolve `claude` on the process `PATH`.
+    /// Resolve `claude` on the `PATH` a launch gets.
     pub fn on_path() -> Self {
         ClaudeCode { search: SearchPath::Environment, transcript_root: None, executable: None }
     }
@@ -126,9 +127,7 @@ impl ClaudeCode {
 
     fn search_dirs(&self) -> Vec<PathBuf> {
         match &self.search {
-            SearchPath::Environment => std::env::var_os("PATH")
-                .map(|p| std::env::split_paths(&p).collect())
-                .unwrap_or_default(),
+            SearchPath::Environment => launch_env::search_path(&launch_env::current()),
             SearchPath::Dirs(dirs) => dirs.clone(),
         }
     }

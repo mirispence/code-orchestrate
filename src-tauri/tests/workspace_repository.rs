@@ -104,6 +104,7 @@ fn opening_re_resolves_the_page_and_hands_it_to_the_system_opener() {
             program: opener().into(),
             args: vec!["https://github.com/owner/repo".into()],
             current_dir: None,
+            env: None,
         }]
     );
 }

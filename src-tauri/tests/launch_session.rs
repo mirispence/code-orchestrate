@@ -2,6 +2,7 @@
 //! spawn, and the errors the UI shows (spec §7.1–7.3).
 
 use std::cell::RefCell;
+use std::ffi::OsStr;
 use std::io;
 
 use code_orchestrate_lib::agents::LaunchMode;
@@ -9,6 +10,7 @@ use code_orchestrate_lib::agents::claude_code::ClaudeCode;
 use code_orchestrate_lib::launch::{
     CustomTemplate, LaunchError, Spawner, Terminal, TerminalCommand, launch_session, test_terminal,
 };
+use code_orchestrate_lib::launch_env::{Environment, PermanentEnvironment, launch_environment};
 use code_orchestrate_lib::store::Store;
 use code_orchestrate_lib::workspaces::add_workspace;
 
@@ -67,7 +69,7 @@ fn new_session_spawns_windows_terminal_running_claude_in_the_workspace() {
     let f = fixture();
     let spawner = FakeSpawner::default();
 
-    launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, f.workspace_id, &LaunchMode::New)
+    launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, &Vec::new(), f.workspace_id, &LaunchMode::New)
         .unwrap();
 
     assert_eq!(
@@ -76,6 +78,7 @@ fn new_session_spawns_windows_terminal_running_claude_in_the_workspace() {
             program: "wt.exe".into(),
             args: strings(&["-w", "new", "new-tab", "-d", &f.workspace_path, &f.claude]),
             current_dir: None,
+            env: Some(Vec::new()),
         }]
     );
 }
@@ -85,7 +88,7 @@ fn continue_last_spawns_claude_with_continue() {
     let f = fixture();
     let spawner = FakeSpawner::default();
 
-    launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, f.workspace_id, &LaunchMode::Continue)
+    launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, &Vec::new(), f.workspace_id, &LaunchMode::Continue)
         .unwrap();
 
     let spawned = spawner.spawned.into_inner();
@@ -98,7 +101,7 @@ fn a_failed_spawn_names_the_program_and_the_os_error() {
     let f = fixture();
     let spawner = FakeSpawner { fail_with: Some(io::ErrorKind::NotFound), ..Default::default() };
 
-    let err = launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, f.workspace_id, &LaunchMode::New)
+    let err = launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, &Vec::new(), f.workspace_id, &LaunchMode::New)
         .unwrap_err();
 
     assert_eq!(
@@ -118,7 +121,7 @@ fn a_missing_executable_spawns_nothing() {
     let agent = ClaudeCode::with_search_path(vec![empty.path().to_path_buf()]);
     let spawner = FakeSpawner::default();
 
-    let err = launch_session(&f.store, &agent, Terminal::WindowsTerminalNewWindow, &spawner, f.workspace_id, &LaunchMode::New)
+    let err = launch_session(&f.store, &agent, Terminal::WindowsTerminalNewWindow, &spawner, &Vec::new(), f.workspace_id, &LaunchMode::New)
         .unwrap_err();
 
     assert_eq!(err, LaunchError::ExecutableNotFound { name: "claude".into() });
@@ -130,7 +133,7 @@ fn an_unknown_workspace_spawns_nothing() {
     let f = fixture();
     let spawner = FakeSpawner::default();
 
-    let err = launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, 999, &LaunchMode::New)
+    let err = launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, &Vec::new(), 999, &LaunchMode::New)
         .unwrap_err();
 
     assert_eq!(err, LaunchError::WorkspaceNotFound { workspace_id: 999 });
@@ -142,7 +145,7 @@ fn launches_go_through_the_chosen_terminal() {
     let f = fixture();
     let spawner = FakeSpawner::default();
 
-    launch_session(&f.store, &f.agent, Terminal::ConsoleWindow, &spawner, f.workspace_id, &LaunchMode::New).unwrap();
+    launch_session(&f.store, &f.agent, Terminal::ConsoleWindow, &spawner, &Vec::new(), f.workspace_id, &LaunchMode::New).unwrap();
 
     let spawned = spawner.spawned.into_inner();
     assert_eq!(spawned[0].program, "cmd.exe");
@@ -155,7 +158,7 @@ fn testing_a_terminal_runs_claude_version_in_the_home_directory_through_it() {
     let spawner = FakeSpawner::default();
     let template = CustomTemplate::new(strings(&["alacritty", "--working-directory", "{cwd}", "-e", "{command}"])).unwrap();
 
-    test_terminal(&f.agent, &Terminal::Custom(template), &spawner, r"C:\Users\me").unwrap();
+    test_terminal(&f.agent, &Terminal::Custom(template), &spawner, &Vec::new(), r"C:\Users\me").unwrap();
 
     assert_eq!(
         spawner.spawned.into_inner(),
@@ -163,8 +166,49 @@ fn testing_a_terminal_runs_claude_version_in_the_home_directory_through_it() {
             program: "alacritty".into(),
             args: strings(&["--working-directory", r"C:\Users\me", "-e", &f.claude, "--version"]),
             current_dir: Some(r"C:\Users\me".into()),
+            env: Some(Vec::new()),
         }]
     );
+}
+
+struct NothingPermanent;
+
+impl PermanentEnvironment for NothingPermanent {
+    fn has(&self, _name: &OsStr) -> bool {
+        false
+    }
+}
+
+/// What a launch gets when npm started the app.
+fn launch_env() -> Environment {
+    let inherited = [("npm_lifecycle_event", "tauri"), ("CARGO_PKG_NAME", "app"), ("MY_OWN", "1")];
+    launch_environment(inherited.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(), &NothingPermanent)
+}
+
+fn only_my_own() -> Option<Environment> {
+    Some(vec![("MY_OWN".into(), "1".into())])
+}
+
+#[test]
+fn a_session_starts_with_the_launch_environment() {
+    let f = fixture();
+    let spawner = FakeSpawner::default();
+
+    launch_session(&f.store, &f.agent, Terminal::ConsoleWindow, &spawner, &launch_env(), f.workspace_id, &LaunchMode::New)
+        .unwrap();
+
+    assert_eq!(spawner.spawned.into_inner()[0].env, only_my_own());
+}
+
+#[test]
+fn testing_a_terminal_starts_it_with_the_launch_environment() {
+    let f = fixture();
+    let spawner = FakeSpawner::default();
+    let template = CustomTemplate::new(strings(&["term", "{command}"])).unwrap();
+
+    test_terminal(&f.agent, &Terminal::Custom(template), &spawner, &launch_env(), r"C:\Users\me").unwrap();
+
+    assert_eq!(spawner.spawned.into_inner()[0].env, only_my_own());
 }
 
 #[test]
@@ -173,7 +217,7 @@ fn testing_a_terminal_reports_a_failed_spawn() {
     let spawner = FakeSpawner { fail_with: Some(io::ErrorKind::NotFound), ..Default::default() };
     let template = CustomTemplate::new(strings(&["nope-term", "{command}"])).unwrap();
 
-    let err = test_terminal(&f.agent, &Terminal::Custom(template), &spawner, r"C:\Users\me").unwrap_err();
+    let err = test_terminal(&f.agent, &Terminal::Custom(template), &spawner, &Vec::new(), r"C:\Users\me").unwrap_err();
 
     assert!(matches!(err, LaunchError::SpawnFailed { ref program, .. } if program == "nope-term"), "{err:?}");
 }
@@ -199,7 +243,7 @@ fn a_missing_workspace_does_not_launch_and_its_folder_is_not_created() {
     std::fs::remove_dir(&f.workspace_path).unwrap();
     let spawner = FakeSpawner::default();
 
-    let err = launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, f.workspace_id, &LaunchMode::New)
+    let err = launch_session(&f.store, &f.agent, Terminal::WindowsTerminalNewWindow, &spawner, &Vec::new(), f.workspace_id, &LaunchMode::New)
         .unwrap_err();
 
     assert_eq!(err, LaunchError::WorkspaceMissing { workspace_id: f.workspace_id, path: f.workspace_path.clone() });

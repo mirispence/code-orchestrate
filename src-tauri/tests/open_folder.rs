@@ -33,6 +33,6 @@ fn opens_the_folder_in_the_platform_file_manager() {
     };
     assert_eq!(
         spawner.spawned.into_inner(),
-        vec![TerminalCommand { program: program.into(), args: vec![dir.into()], current_dir: None }]
+        vec![TerminalCommand { program: program.into(), args: vec![dir.into()], current_dir: None, env: None }]
     );
 }

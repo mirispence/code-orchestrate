@@ -13,6 +13,7 @@ use crate::agents::claude_code::{ClaudeCode, ExecutableStatus, TranscriptRootSta
 use crate::paths::{NormalizedPath, normalize};
 use crate::agents::{self, AgentStatus, LaunchMode};
 use crate::launch::{self, CustomTemplate, LaunchError, OsSpawner, Terminal};
+use crate::launch_env;
 use crate::repository::{self, OsGit, Repository, RepositoryError};
 use crate::store::{Session, Store, Workspace, WorkspaceEdit};
 use crate::workspaces::{self, AddWorkspaceError, Saved, WorkspaceError};
@@ -261,7 +262,7 @@ pub async fn launch_session(
     let settings = Arc::clone(&settings);
     with_store(&store, LaunchError::Internal, move |s| {
         let (terminal, agent) = configured(&settings)?;
-        launch::launch_session(s, &agent, terminal, &OsSpawner, workspace_id, &mode)
+        launch::launch_session(s, &agent, terminal, &OsSpawner, &launch_env::current(), workspace_id, &mode)
     })
     .await
 }
@@ -372,7 +373,7 @@ pub async fn test_terminal(
     let home = home.to_string_lossy().into_owned();
     let settings = Arc::clone(&settings);
     blocking(LaunchError::Internal, move || {
-        launch::test_terminal(&agent(&settings), &Terminal::Custom(template), &OsSpawner, &home)
+        launch::test_terminal(&agent(&settings), &Terminal::Custom(template), &OsSpawner, &launch_env::current(), &home)
     })
     .await?
 }
