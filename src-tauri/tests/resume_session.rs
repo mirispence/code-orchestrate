@@ -89,6 +89,7 @@ impl Fixture {
             &self.agent,
             Terminal::WindowsTerminalNewWindow,
             spawner,
+            &Vec::new(),
             self.workspace_id,
             &LaunchMode::Resume(session_id.to_owned()),
         )
@@ -98,7 +99,7 @@ impl Fixture {
 fn wt_running(cwd: &str, args: &[&str]) -> TerminalCommand {
     let mut all: Vec<String> = ["-w", "new", "new-tab", "-d", cwd].iter().map(|s| s.to_string()).collect();
     all.extend(args.iter().map(|s| s.to_string()));
-    TerminalCommand { program: "wt.exe".into(), args: all, current_dir: None }
+    TerminalCommand { program: "wt.exe".into(), args: all, current_dir: None, env: Some(Vec::new()) }
 }
 
 #[test]

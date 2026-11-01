@@ -12,7 +12,7 @@ fn claude(cwd: &str, args: &[&str]) -> LaunchCommand {
 }
 
 fn wt(args: &[&str]) -> TerminalCommand {
-    TerminalCommand { program: "wt.exe".into(), args: args.iter().map(|a| a.to_string()).collect(), current_dir: None }
+    TerminalCommand { program: "wt.exe".into(), args: args.iter().map(|a| a.to_string()).collect(), current_dir: None, env: None }
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn windows_terminal_can_open_a_new_tab_in_the_most_recent_window() {
 }
 
 fn console(args: &[&str]) -> TerminalCommand {
-    TerminalCommand { program: "cmd.exe".into(), args: args.iter().map(|a| a.to_string()).collect(), current_dir: None }
+    TerminalCommand { program: "cmd.exe".into(), args: args.iter().map(|a| a.to_string()).collect(), current_dir: None, env: None }
 }
 
 #[test]
@@ -137,6 +137,7 @@ fn a_custom_template_puts_cwd_in_one_argument_and_spreads_the_command() {
                 "abc".into(),
             ],
             current_dir: Some(r"C:\My Projects\app".into()),
+            env: None,
         }
     );
 }
@@ -159,7 +160,7 @@ fn a_custom_template_may_start_with_the_command() {
 
     assert_eq!(
         wrapped,
-        TerminalCommand { program: r"C:\Users\me\.local\bin\claude.exe".into(), args: vec!["--continue".into()], current_dir: Some(r"E:\w".into()) }
+        TerminalCommand { program: r"C:\Users\me\.local\bin\claude.exe".into(), args: vec!["--continue".into()], current_dir: Some(r"E:\w".into()), env: None }
     );
 }
 

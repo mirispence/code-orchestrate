@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::agents::{AgentAdapter, LaunchCommand, LaunchCommandError, LaunchMode};
 use crate::attribution;
+use crate::launch_env::Environment;
 use crate::paths::NormalizedPath;
 use crate::store::{Store, StoreError, Workspace};
 use crate::ui_error::ui_error;
@@ -68,17 +69,21 @@ impl Spawner for OsSpawner {
         if let Some(dir) = &cmd.current_dir {
             command.current_dir(dir);
         }
+        if let Some(env) = &cmd.env {
+            command.env_clear().envs(env.iter().map(|(name, value)| (name, value)));
+        }
         command.spawn().map(drop)
     }
 }
 
 /// Start a Session for a Workspace: the adapter builds the command (resolving
-/// its executable afresh), `terminal` wraps it, `spawner` starts it.
+/// its executable afresh), `terminal` wraps it, `spawner` starts it in `env`.
 pub fn launch_session(
     store: &Store,
     agent: &dyn AgentAdapter,
     terminal: Terminal,
     spawner: &dyn Spawner,
+    env: &Environment,
     workspace_id: i64,
     mode: &LaunchMode,
 ) -> Result<(), LaunchError> {
@@ -95,7 +100,7 @@ pub fn launch_session(
         LaunchMode::New | LaunchMode::Continue => workspace.path.clone(),
     };
     let command = agent.launch_command(&cwd, mode)?;
-    spawn_in(&terminal, spawner, &command)
+    spawn_in(&terminal, spawner, env, &command)
 }
 
 /// Where to resume a Session: its `first_cwd` if that folder still exists,
@@ -133,7 +138,7 @@ pub fn open_with_system(spawner: &dyn Spawner, target: &str) -> io::Result<()> {
     } else {
         "xdg-open"
     };
-    spawner.spawn(&TerminalCommand { program: program.into(), args: vec![target.into()], current_dir: None })
+    spawner.spawn(&TerminalCommand { program: program.into(), args: vec![target.into()], current_dir: None, env: None })
 }
 
 /// Settings › Terminal › Test: run the Agent's version command (`claude
@@ -142,14 +147,20 @@ pub fn test_terminal(
     agent: &dyn AgentAdapter,
     terminal: &Terminal,
     spawner: &dyn Spawner,
+    env: &Environment,
     home: &str,
 ) -> Result<(), LaunchError> {
     let command = agent.version_command(home)?;
-    spawn_in(terminal, spawner, &command)
+    spawn_in(terminal, spawner, env, &command)
 }
 
-fn spawn_in(terminal: &Terminal, spawner: &dyn Spawner, command: &LaunchCommand) -> Result<(), LaunchError> {
-    let wrapped = terminal.wrap(command);
+fn spawn_in(
+    terminal: &Terminal,
+    spawner: &dyn Spawner,
+    env: &Environment,
+    command: &LaunchCommand,
+) -> Result<(), LaunchError> {
+    let wrapped = TerminalCommand { env: Some(env.clone()), ..terminal.wrap(command) };
     spawner
         .spawn(&wrapped)
         .map_err(|e| LaunchError::SpawnFailed { program: wrapped.program.clone(), os_error: e.to_string() })
@@ -162,6 +173,8 @@ pub struct TerminalCommand {
     pub args: Vec<String>,
     /// The directory to start the process in; `None` inherits the app's.
     pub current_dir: Option<String>,
+    /// The whole environment to start the process with; `None` inherits the app's.
+    pub env: Option<Environment>,
 }
 
 /// How a launch reaches a terminal: the presets from Settings (spec §7.2).
@@ -216,7 +229,7 @@ impl CustomTemplate {
         // `new` guarantees `{command}`, so argv is never empty.
         let program = argv.remove(0);
         // Start in the directory too, for templates without `{cwd}`.
-        TerminalCommand { program, args: argv, current_dir: Some(cmd.cwd.clone()) }
+        TerminalCommand { program, args: argv, current_dir: Some(cmd.cwd.clone()), env: None }
     }
 }
 
@@ -243,7 +256,7 @@ impl Terminal {
                 };
                 args.push(escape_for_cmd(&cmd.program));
                 args.extend(cmd.args.iter().map(|a| escape_for_cmd(a)));
-                TerminalCommand { program: "cmd.exe".into(), args, current_dir }
+                TerminalCommand { program: "cmd.exe".into(), args, current_dir, env: None }
             }
             Terminal::Custom(template) => template.wrap(cmd),
         }
@@ -255,7 +268,7 @@ fn windows_terminal(window: &str, cmd: &LaunchCommand) -> TerminalCommand {
     args.push(escape_for_wt(&cmd.cwd));
     args.push(escape_for_wt(&cmd.program));
     args.extend(cmd.args.iter().map(|a| escape_for_wt(a)));
-    TerminalCommand { program: "wt.exe".into(), args, current_dir: None }
+    TerminalCommand { program: "wt.exe".into(), args, current_dir: None, env: None }
 }
 
 fn strings(items: &[&str]) -> Vec<String> {
