@@ -13,6 +13,7 @@ use crate::agents::claude_code::{ClaudeCode, ExecutableStatus, TranscriptRootSta
 use crate::paths::{NormalizedPath, normalize};
 use crate::agents::{self, AgentStatus, LaunchMode};
 use crate::launch::{self, CustomTemplate, LaunchError, OsSpawner, Terminal};
+use crate::git_commands::{self, GitCommand, GitCommandError, GitStatus, RunningCommands};
 use crate::launch_env;
 use crate::repository::{self, OsGit, Repository, RepositoryError};
 use crate::store::{Session, Store, Workspace, WorkspaceEdit};
@@ -385,7 +386,7 @@ pub async fn workspace_repository(
     workspace_id: i64,
 ) -> Result<Option<Repository>, RepositoryError> {
     let workspace = read_workspace(&store, workspace_id).await?;
-    blocking(RepositoryError::Internal, move || repository::workspace_repository(&workspace, &OsGit)).await
+    blocking(RepositoryError::Internal, move || repository::workspace_repository(&workspace, &OsGit::default())).await
 }
 
 /// Open the Workspace's repository page in the default browser. Takes the id,
@@ -394,7 +395,7 @@ pub async fn workspace_repository(
 pub async fn open_workspace_repository(store: State<'_, AppStore>, workspace_id: i64) -> Result<(), RepositoryError> {
     let workspace = read_workspace(&store, workspace_id).await?;
     blocking(RepositoryError::Internal, move || {
-        repository::open_workspace_repository(&workspace, &OsGit, &OsSpawner)
+        repository::open_workspace_repository(&workspace, &OsGit::default(), &OsSpawner)
     })
     .await?
 }
@@ -403,4 +404,57 @@ pub async fn open_workspace_repository(store: State<'_, AppStore>, workspace_id:
 /// slow git never holds up other commands.
 async fn read_workspace(store: &AppStore, workspace_id: i64) -> Result<Workspace, RepositoryError> {
     with_store(store, RepositoryError::Internal, move |s| repository::get_workspace(s, workspace_id)).await
+}
+
+/// The Workspaces with a git command running.
+pub type AppGitCommands = Arc<RunningCommands>;
+
+/// git for a Workspace's status and commands: the launch environment, without
+/// terminal prompts.
+fn workspace_git() -> OsGit {
+    OsGit::with_environment(git_commands::command_environment(launch_env::current()))
+}
+
+/// The Workspace's status line, or `null` outside a work tree (#34).
+#[tauri::command]
+pub async fn workspace_git_status(
+    store: State<'_, AppStore>,
+    workspace_id: i64,
+) -> Result<Option<GitStatus>, GitCommandError> {
+    let workspace = read_workspace(&store, workspace_id).await?;
+    blocking(GitCommandError::Internal, move || git_commands::workspace_status(&workspace, &workspace_git())).await
+}
+
+/// Run a git command on a worker thread; the UI stays usable while it runs.
+#[tauri::command]
+pub async fn run_git_command(
+    store: State<'_, AppStore>,
+    running: State<'_, AppGitCommands>,
+    workspace_id: i64,
+    command: GitCommand,
+) -> Result<(), GitCommandError> {
+    let workspace = read_workspace(&store, workspace_id).await?;
+    let running = Arc::clone(&running);
+    blocking(GitCommandError::Internal, move || {
+        git_commands::run_command(&workspace, &workspace_git(), &running, command)
+    })
+    .await?
+}
+
+/// Run a git command through the terminal chosen in Settings.
+#[tauri::command]
+pub async fn run_git_in_terminal(
+    store: State<'_, AppStore>,
+    settings: State<'_, AppSettings>,
+    workspace_id: i64,
+    command: GitCommand,
+) -> Result<(), GitCommandError> {
+    let workspace = read_workspace(&store, workspace_id).await?;
+    let settings = Arc::clone(&settings);
+    blocking(GitCommandError::Internal, move || {
+        let (terminal, _) = configured(&settings)?;
+        let env = launch_env::current();
+        git_commands::run_in_terminal(&workspace, &workspace_git(), &terminal, &OsSpawner, &env, command)
+    })
+    .await?
 }

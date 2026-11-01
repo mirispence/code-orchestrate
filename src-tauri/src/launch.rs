@@ -154,7 +154,8 @@ pub fn test_terminal(
     spawn_in(terminal, spawner, env, &command)
 }
 
-fn spawn_in(
+/// Wrap `command` in `terminal` and start it in `env`.
+pub fn spawn_in(
     terminal: &Terminal,
     spawner: &dyn Spawner,
     env: &Environment,

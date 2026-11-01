@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { GitBranch, Play, RotateCw, Star } from "lucide-react";
 
 import { ErrorToast } from "@/components/ErrorToast";
+import { GitControls } from "@/components/GitControls";
 import { ResumeTable } from "@/components/ResumeTable";
 import { StatTiles } from "@/components/StatTiles";
 import { TagList } from "@/components/TagList";
@@ -176,6 +177,7 @@ export function WorkspaceDetail({
         onOpenRepository={() => void openRepository()}
         onEdit={onEdit}
         onTogglePin={onTogglePin}
+        onFoundMissing={onFoundMissing}
       />
 
       {workspace.missing && (
@@ -257,7 +259,8 @@ function WorkspaceHeader({
   onOpenRepository,
   onEdit,
   onTogglePin,
-}: Pick<WorkspaceDetailProps, "workspace" | "onEdit" | "onTogglePin"> & {
+  onFoundMissing,
+}: Pick<WorkspaceDetailProps, "workspace" | "onEdit" | "onTogglePin" | "onFoundMissing"> & {
   repository: Repository | null;
   onOpenRepository: () => void;
 }) {
@@ -283,6 +286,7 @@ function WorkspaceHeader({
               {repository.name}
             </button>
           )}
+          <GitControls workspace={workspace} onFoundMissing={onFoundMissing} />
         </div>
         <div className="flex shrink-0 gap-1">
           <Button size="sm" variant="ghost" onClick={onTogglePin}>

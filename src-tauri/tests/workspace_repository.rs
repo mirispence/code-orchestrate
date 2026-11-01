@@ -4,10 +4,12 @@
 use std::cell::RefCell;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use code_orchestrate_lib::launch::{Spawner, TerminalCommand};
 use code_orchestrate_lib::repository::{
-    Git, OsGit, Repository, RepositoryError, find, get_workspace, open_workspace_repository, workspace_repository,
+    Git, GitFailure, GitOutput, OsGit, Repository, RepositoryError, find, get_workspace, open_workspace_repository,
+    workspace_repository,
 };
 use code_orchestrate_lib::store::{Store, Workspace};
 use code_orchestrate_lib::workspaces::add_workspace;
@@ -17,9 +19,9 @@ use code_orchestrate_lib::workspaces::add_workspace;
 struct FakeGit(Option<&'static str>);
 
 impl Git for FakeGit {
-    fn run(&self, _dir: &Path, args: &[&str]) -> Option<String> {
+    fn execute(&self, _dir: &Path, args: &[&str], _limit: Duration) -> Result<GitOutput, GitFailure> {
         assert_eq!(args, ["remote", "-v"]);
-        self.0.map(str::to_owned)
+        Ok(self.0.map_or_else(|| GitOutput::failed("fatal: not a git repository"), GitOutput::succeeded))
     }
 }
 
@@ -31,7 +33,7 @@ const ORIGIN: FakeGit = FakeGit(Some(
 struct NoGit;
 
 impl Git for NoGit {
-    fn run(&self, _dir: &Path, _args: &[&str]) -> Option<String> {
+    fn execute(&self, _dir: &Path, _args: &[&str], _limit: Duration) -> Result<GitOutput, GitFailure> {
         panic!("git must not run for a Missing Workspace");
     }
 }
@@ -157,9 +159,9 @@ fn os_git_reads_the_origin_from_any_folder_in_the_repository() {
     std::fs::create_dir(&sub).unwrap();
 
     let expected = Some(Repository { name: "owner/repo".into(), url: "https://github.com/owner/repo".into() });
-    assert_eq!(find(&OsGit, dir.path()), expected);
-    assert_eq!(find(&OsGit, &sub), expected);
+    assert_eq!(find(&OsGit::default(), dir.path()), expected);
+    assert_eq!(find(&OsGit::default(), &sub), expected);
 
     let outside = tempfile::tempdir().unwrap();
-    assert_eq!(find(&OsGit, outside.path()), None);
+    assert_eq!(find(&OsGit::default(), outside.path()), None);
 }

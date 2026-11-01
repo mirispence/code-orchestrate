@@ -3,25 +3,72 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
 use crate::launch::{self, Spawner};
+use crate::launch_env::Environment;
 use crate::store::{Store, StoreError, Workspace};
 use crate::ui_error::ui_error;
 
 /// Runs `git`. The real one is [`OsGit`]; tests answer with canned output.
 pub trait Git {
-    /// `git <args>` in `dir`: its stdout, or `None` when it could not run or failed.
-    fn run(&self, dir: &Path, args: &[&str]) -> Option<String>;
+    /// `git <args>` in `dir`, stopped once `limit` has passed.
+    fn execute(&self, dir: &Path, args: &[&str], limit: Duration) -> Result<GitOutput, GitFailure>;
+
+    /// `git <args>` in `dir` under [`GIT_TIMEOUT`]: its stdout, or `None` when
+    /// it could not run or failed.
+    fn run(&self, dir: &Path, args: &[&str]) -> Option<String> {
+        let output = self.execute(dir, args, GIT_TIMEOUT).ok()?;
+        output.success.then_some(output.stdout)
+    }
 }
 
-/// The repository whose remote `dir` (or a folder above it) has: `origin`, or
-/// the only remote when there is no `origin`. `None` when there is none, the
-/// folder is not in a repository or git cannot run.
+/// What a finished `git` printed, and whether it exited with success.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitOutput {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl GitOutput {
+    pub fn succeeded(stdout: &str) -> Self {
+        GitOutput { success: true, stdout: stdout.to_owned(), stderr: String::new() }
+    }
+
+    pub fn failed(stderr: &str) -> Self {
+        GitOutput { success: false, stdout: String::new(), stderr: stderr.to_owned() }
+    }
+}
+
+/// Why `git` did not finish.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitFailure {
+    /// It ran past its limit and was stopped.
+    TimedOut,
+    /// It could not be started.
+    NotStarted(String),
+}
+
+/// A remote of a repository, by the name git knows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Remote {
+    pub name: String,
+    pub url: String,
+}
+
+/// The repository whose remote `dir` (or a folder above it) has. `None` when
+/// there is none, the folder is not in a repository or git cannot run.
 pub fn find(git: &dyn Git, dir: &Path) -> Option<Repository> {
+    web_page(&find_remote(git, dir)?.url)
+}
+
+/// The remote to use: `origin`, or the only remote when there is no `origin`.
+pub fn find_remote(git: &dyn Git, dir: &Path) -> Option<Remote> {
     // Lines are `name<TAB>url (fetch)` and `name<TAB>url (push)`; URLs have no spaces.
     let stdout = git.run(dir, &["remote", "-v"])?;
     let mut remotes: Vec<(&str, &str)> = Vec::new();
@@ -31,12 +78,12 @@ pub fn find(git: &dyn Git, dir: &Path) -> Option<Repository> {
         let Some((url, _)) = rest.split_once(" (fetch)") else { continue };
         remotes.push((name, url));
     }
-    let url = match remotes.iter().find(|(name, _)| *name == "origin") {
-        Some((_, url)) => url,
-        None if remotes.len() == 1 => remotes[0].1,
+    let (name, url) = match remotes.iter().find(|(name, _)| *name == "origin") {
+        Some(remote) => *remote,
+        None if remotes.len() == 1 => remotes[0],
         None => return None,
     };
-    web_page(url)
+    Some(Remote { name: name.to_owned(), url: url.to_owned() })
 }
 
 /// Why a repository page could not be opened. Serialises for the UI as
@@ -95,44 +142,91 @@ pub fn open_workspace_repository(
         .map_err(|e| RepositoryError::OpenFailed { os_error: e.to_string() })
 }
 
-/// How long `git` may take before it is given up on.
+/// How long a read of a repository may take before it is given up on.
 const GIT_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a finished `git` gets to hand over its output. A process it left
+/// running can hold the pipes open, and must not hold up the caller.
+const OUTPUT_GRACE: Duration = Duration::from_secs(2);
 
-/// Runs `git` from PATH without a console window, giving up after [`GIT_TIMEOUT`].
-pub struct OsGit;
+/// Runs `git` from PATH without a console window. Without an environment of
+/// its own it inherits the app's.
+#[derive(Debug, Clone, Default)]
+pub struct OsGit {
+    env: Option<Environment>,
+}
+
+impl OsGit {
+    pub fn with_environment(env: Environment) -> Self {
+        OsGit { env: Some(env) }
+    }
+}
 
 impl Git for OsGit {
-    fn run(&self, dir: &Path, args: &[&str]) -> Option<String> {
+    fn execute(&self, dir: &Path, args: &[&str], limit: Duration) -> Result<GitOutput, GitFailure> {
         let mut command = Command::new("git");
-        command.args(args).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            command.creation_flags(CREATE_NO_WINDOW);
+        command.args(args).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        if let Some(env) = &self.env {
+            command.env_clear().envs(env.iter().map(|(name, value)| (name, value)));
         }
-        let mut child = command.spawn().ok()?;
-        // Read stdout while waiting, so a full pipe cannot stall git.
-        let mut stdout = child.stdout.take()?;
-        let reader = std::thread::spawn(move || {
-            let mut text = String::new();
-            stdout.read_to_string(&mut text).ok().map(|_| text)
-        });
-        let deadline = Instant::now() + GIT_TIMEOUT;
+        hide_window(&mut command);
+        let mut child = command.spawn().map_err(|e| GitFailure::NotStarted(e.to_string()))?;
+        // Read while waiting, so a full pipe cannot stall git.
+        let stdout = child.stdout.take().map(read_in_background);
+        let stderr = child.stderr.take().map(read_in_background);
+        let deadline = Instant::now() + limit;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
                 Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
                 _ => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
+                    stop_with_helpers(&mut child);
+                    return Err(GitFailure::TimedOut);
                 }
             }
         };
-        let text = reader.join().ok()??;
-        status.success().then_some(text)
+        let collect = |reader: Option<Receiver<String>>| {
+            reader.and_then(|r| r.recv_timeout(OUTPUT_GRACE).ok()).unwrap_or_default()
+        };
+        Ok(GitOutput { success: status.success(), stdout: collect(stdout), stderr: collect(stderr) })
     }
+}
+
+/// Stop `git` and, on Windows, what it started: a `fetch` or a transport helper
+/// left running could still change the repository after a retry began.
+fn stop_with_helpers(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        let mut taskkill = Command::new("taskkill");
+        taskkill.args(["/T", "/F", "/PID", &child.id().to_string()]);
+        taskkill.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        hide_window(&mut taskkill);
+        let _ = taskkill.status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn hide_window(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
+
+/// Read `pipe` to its end on another thread.
+fn read_in_background(mut pipe: impl Read + Send + 'static) -> Receiver<String> {
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        // Whatever arrived before a read error is still worth showing.
+        let _ = pipe.read_to_end(&mut bytes);
+        let _ = sender.send(String::from_utf8_lossy(&bytes).into_owned());
+    });
+    receiver
 }
 
 /// A repository's web page, e.g. `owner/repo` at `https://github.com/owner/repo`.
@@ -227,8 +321,8 @@ mod tests {
     struct FakeGit(Option<&'static str>);
 
     impl Git for FakeGit {
-        fn run(&self, _dir: &Path, _args: &[&str]) -> Option<String> {
-            self.0.map(str::to_owned)
+        fn execute(&self, _dir: &Path, _args: &[&str], _limit: Duration) -> Result<GitOutput, GitFailure> {
+            Ok(self.0.map_or_else(|| GitOutput::failed("fatal"), GitOutput::succeeded))
         }
     }
 

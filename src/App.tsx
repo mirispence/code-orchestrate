@@ -11,6 +11,7 @@ import { WorkspaceDetail } from "@/components/WorkspaceDetail";
 import { Button } from "@/components/ui/button";
 import { api, type AddWorkspaceError, type Saved, type Suggestion, type Workspace, type WorkspaceStats } from "@/lib/api";
 import { tagsInUse } from "@/lib/tags";
+import { GitCommandsContext, useGitCommands } from "@/lib/useGitCommands";
 import { useScan } from "@/lib/useScan";
 import { useSettings } from "@/lib/useSettings";
 
@@ -27,6 +28,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const settings = useSettings();
+  const gitCommands = useGitCommands();
   const openSettings = useCallback(() => {
     setSuggestionsOpen(false);
     setSettingsOpen(true);
@@ -176,15 +178,17 @@ export default function App() {
         ) : suggestionsOpen ? (
           <SuggestionsInbox suggestions={suggestions} onAdd={addSuggestion} onDismiss={dismissSuggestion} />
         ) : selected ? (
-          <WorkspaceDetail
-            workspace={selected}
-            stats={stats.get(selected.id) ?? null}
-            onEdit={() => setEditingId(selected.id)}
-            onTogglePin={() => void togglePin(selected)}
-            onOpenSettings={openSettings}
-            onLocate={() => void locate(selected)}
-            onFoundMissing={() => void reload()}
-          />
+          <GitCommandsContext.Provider value={gitCommands}>
+            <WorkspaceDetail
+              workspace={selected}
+              stats={stats.get(selected.id) ?? null}
+              onEdit={() => setEditingId(selected.id)}
+              onTogglePin={() => void togglePin(selected)}
+              onOpenSettings={openSettings}
+              onLocate={() => void locate(selected)}
+              onFoundMissing={() => void reload()}
+            />
+          </GitCommandsContext.Provider>
         ) : workspaces.length === 0 && loadError === null ? (
           <EmptyState onAddWorkspace={addWorkspace} onOpenSuggestions={openSuggestions} />
         ) : null}
