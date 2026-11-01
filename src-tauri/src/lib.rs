@@ -4,6 +4,7 @@
 pub mod agents;
 pub mod attribution;
 pub mod commands;
+pub mod git_commands;
 pub mod launch;
 pub mod launch_env;
 pub mod paths;
@@ -35,6 +36,7 @@ pub fn run() {
             commands::apply_settings(app.handle(), &settings.load());
             let settings: commands::AppSettings = Arc::new(Mutex::new(settings));
             app.manage::<commands::AppSettings>(Arc::clone(&settings));
+            app.manage(commands::AppGitCommands::default());
             // Probe the Claude Code executable at startup for the status line (spec §9.3).
             let probe = commands::ExecutableProbe::default();
             app.manage::<commands::ExecutableProbe>(Arc::clone(&probe));
@@ -85,6 +87,9 @@ pub fn run() {
             commands::open_data_folder,
             commands::workspace_repository,
             commands::open_workspace_repository,
+            commands::workspace_git_status,
+            commands::run_git_command,
+            commands::run_git_in_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

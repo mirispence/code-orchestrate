@@ -189,6 +189,34 @@ export type RepositoryError =
   | { kind: "openFailed"; message: string; osError: string }
   | CommandError;
 
+/** A Workspace's status line and what its git buttons depend on (#34). Local only. */
+export type GitStatus = {
+  /** `null` on a detached HEAD. */
+  branch: string | null;
+  /** `null` when the branch has no upstream. */
+  tracking: { ahead: number; behind: number } | null;
+  changes: boolean;
+  remote: string | null;
+  defaultBranch: string | null;
+};
+
+export type GitCommand = "pull" | "push" | "checkoutDefault";
+
+export type GitCommandError =
+  | { kind: "workspaceNotFound"; message: string; workspaceId: number }
+  | { kind: "workspaceMissing"; message: string; workspaceId: number; path: string }
+  | { kind: "notARepository"; message: string }
+  | { kind: "noRemote"; message: string }
+  | { kind: "detachedHead"; message: string }
+  | { kind: "noDefaultBranch"; message: string }
+  | { kind: "alreadyOnDefaultBranch"; message: string; branch: string }
+  | { kind: "uncommittedChanges"; message: string; branch: string }
+  | { kind: "alreadyRunning"; message: string }
+  | { kind: "failed"; message: string; output: string }
+  | { kind: "timedOut"; message: string; command: string }
+  | { kind: "terminal"; message: string }
+  | CommandError;
+
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 /** Normalise a rejected `invoke` into a `{ kind, message }` error. */
@@ -282,6 +310,23 @@ export const api = {
   /** Open the Workspace's repository page in the default browser; the backend resolves the URL. */
   openWorkspaceRepository(workspaceId: number): Promise<Result<null, RepositoryError>> {
     return call("open_workspace_repository", { workspaceId });
+  },
+
+  /** The Workspace's git status, or `null` outside a work tree or for a Missing Workspace. Throws on an internal error. */
+  async gitStatus(workspaceId: number): Promise<GitStatus | null> {
+    const result = await call<GitStatus | null, GitCommandError>("workspace_git_status", { workspaceId });
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  },
+
+  /** Run a git command in the background. The backend rechecks its conditions. */
+  runGitCommand(workspaceId: number, command: GitCommand): Promise<Result<null, GitCommandError>> {
+    return call("run_git_command", { workspaceId, command });
+  },
+
+  /** Run a git command in the Workspace directory through the configured terminal. */
+  runGitInTerminal(workspaceId: number, command: GitCommand): Promise<Result<null, GitCommandError>> {
+    return call("run_git_in_terminal", { workspaceId, command });
   },
 
   /** Suggestions computed from the stored Sessions. Throws on an internal error. */
