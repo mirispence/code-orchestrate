@@ -12,6 +12,10 @@ _Avoid_: Project (Claude Code uses that word for its own storage folders), folde
 A coding CLI the app can launch in a Workspace, such as Claude Code, Codex, or Antigravity.
 _Avoid_: Tool, assistant, bot
 
+**Default Agent**:
+The Agent a Workspace launches unless the user picks another for one launch. Each Workspace either names its own Default Agent or uses the app-wide one.
+_Avoid_: Primary agent, main agent
+
 **Session**:
 One conversation with an Agent in a Workspace. It can be resumed or continued across several runs and stays the same Session; forking it starts a new one. An Agent's subagents belong to the Session that spawned them and are not Sessions themselves.
 _Avoid_: Run, chat
