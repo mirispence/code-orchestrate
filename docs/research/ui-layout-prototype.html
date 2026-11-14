@@ -1,0 +1,343 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Answers wayfinder ticket "Prototype the UI layout and look" (#5).
+  Three structurally different layouts for Code Orchestrate, switchable via ?variant=A|B|C
+  (or ←/→ keys, or the floating bar). Theme: system default, toggle with the ◐ button or "t".
+  Mock data only; launch buttons show the command they would run. Nothing persists.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code Orchestrate prototype</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-subtle: #f6f6f7; --bg-muted: #eeeef0; --card: #ffffff;
+    --fg: #18181b; --fg-muted: #6b6b75; --border: #e4e4e7;
+    --primary: #18181b; --primary-fg: #fafafa;
+    --accent: #d97757; --accent-soft: #fbeee8;
+    --ok: #16a34a; --ring: #a1a1aa;
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.06);
+    --radius: 10px;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e0e10; --bg-subtle: #151518; --bg-muted: #1f1f23; --card: #17171a;
+    --fg: #f4f4f5; --fg-muted: #9a9aa4; --border: #2a2a2f;
+    --primary: #f4f4f5; --primary-fg: #18181b;
+    --accent: #e08a6c; --accent-soft: #3a241c;
+    --ring: #52525b;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.45 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  input { font: inherit; color: inherit; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--fg-muted); }
+  .btn { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 6px 12px; }
+  .btn:hover { background: var(--bg-muted); }
+  .btn.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+  .btn.primary:hover { opacity: .9; }
+  .btn.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .btn.ghost:hover { background: var(--bg-muted); }
+  .btn.sm { padding: 3px 8px; font-size: 12px; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--bg-muted); color: var(--fg-muted); margin-right: 4px; }
+  .tag.on { background: var(--primary); color: var(--primary-fg); }
+  .pin { color: var(--accent); }
+  .input { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 7px 10px; width: 100%; outline: none; }
+  .input:focus { border-color: var(--ring); }
+  .kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--fg-muted); background: var(--bg-subtle); }
+  .badge { background: var(--accent); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 7px; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 500; color: var(--fg-muted); font-size: 12px; }
+  tr.sess:hover td { background: var(--bg-subtle); }
+  h1, h2, h3 { margin: 0; font-weight: 600; }
+  .stat .v { font-size: 20px; font-weight: 600; }
+  .stat .l { font-size: 12px; color: var(--fg-muted); }
+
+  /* floating prototype switcher — deliberately not part of the design */
+  #switcher { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 99;
+    background: #ff2d87; color: #fff; border-radius: 99px; padding: 6px 8px; display: flex; gap: 8px; align-items: center;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35); font: 600 13px system-ui; }
+  #switcher button { background: rgba(255,255,255,.2); border: 0; color: #fff; border-radius: 99px; width: 28px; height: 28px; }
+  #toast { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 98; background: var(--primary); color: var(--primary-fg);
+    padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow); display: none; max-width: 90vw; }
+
+  /* ---------- Variant A: sidebar master/detail ---------- */
+  .A { display: grid; grid-template-columns: 290px 1fr; height: 100vh; }
+  .A aside { border-right: 1px solid var(--border); background: var(--bg-subtle); display: flex; flex-direction: column; min-height: 0; }
+  .A .side-head { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .A .side-list { overflow: auto; flex: 1; padding: 0 8px 80px; }
+  .A .sec { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); padding: 10px 8px 4px; }
+  .A .item { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .A .item:hover { background: var(--bg-muted); }
+  .A .item.sel { background: var(--card); box-shadow: var(--shadow); }
+  .A .item .n { font-weight: 500; }
+  .A main { overflow: auto; padding: 28px 36px 90px; }
+  .A .launch { display: flex; gap: 8px; margin: 18px 0 24px; }
+  .A .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .A .stat { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--card); }
+  .A .inbox-link { margin: 8px; padding: 10px; border-radius: 8px; border: 1px dashed var(--border); display: flex; justify-content: space-between; cursor: pointer; }
+  .A .inbox-link:hover { background: var(--bg-muted); }
+  .sugg { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; background: var(--card); display: flex; gap: 12px; align-items: center; }
+  .sugg .grow { flex: 1; min-width: 0; }
+
+  /* ---------- Variant B: launcher / command palette ---------- */
+  .B { min-height: 100vh; display: flex; justify-content: center; padding: 60px 16px 100px; background: var(--bg-subtle); }
+  .B .pal { width: 760px; max-width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; align-self: flex-start; }
+  .B .q { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .B .q input { border: 0; outline: none; background: transparent; font-size: 17px; flex: 1; }
+  .B .strip { background: var(--accent-soft); padding: 8px 16px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+  .B .row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 10px 16px; cursor: pointer; border-left: 3px solid transparent; }
+  .B .row.sel { background: var(--bg-muted); border-left-color: var(--accent); }
+  .B .row .meta { font-size: 12px; color: var(--fg-muted); text-align: right; }
+  .B .expand { padding: 4px 16px 14px 19px; background: var(--bg-muted); }
+  .B .acts { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+  .B .foot { display: flex; gap: 14px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--fg-muted); background: var(--bg-subtle); }
+  .B .sesslist .r { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .B .sesslist .r:hover { background: var(--card); }
+
+  /* ---------- Variant C: dashboard cards + drawer + tabs ---------- */
+  .C header { display: flex; align-items: center; gap: 16px; padding: 14px 28px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  .C .tabs { display: flex; gap: 4px; }
+  .C .tab { padding: 6px 12px; border-radius: 8px; border: 0; background: transparent; }
+  .C .tab.on { background: var(--bg-muted); font-weight: 600; }
+  .C .body { padding: 22px 28px 100px; }
+  .C .filters { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .C .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .C .card { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: var(--card); cursor: pointer; display: flex; flex-direction: column; gap: 10px; transition: box-shadow .15s; }
+  .C .card:hover { box-shadow: var(--shadow); }
+  .C .card .mini { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .C .card .mini div { font-size: 11px; color: var(--fg-muted); } .C .card .mini b { display: block; font-size: 14px; color: var(--fg); }
+  .C .drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; }
+  .C .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 520px; max-width: 100%; background: var(--bg); border-left: 1px solid var(--border); z-index: 21; overflow: auto; padding: 24px 24px 90px; box-shadow: var(--shadow); }
+  .C .bigbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0; }
+  .C .bigbtns .btn { padding: 12px; text-align: left; }
+  .C .h-sec { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); margin: 18px 0 10px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+<div id="switcher">
+  <button id="prev" title="Previous variant (←)">‹</button>
+  <span id="vlabel"></span>
+  <button id="next" title="Next variant (→)">›</button>
+  <button id="theme" title="Toggle theme (t)">◐</button>
+</div>
+<script>
+// ---------------- mock data (in memory) ----------------
+const S = {
+  workspaces: [
+    { id: 1, name: "Code Orchestrate", path: "E:\\Programming\\code-orchestrate", pin: true, tags: ["tauri","personal"], note: "This app.", running: true,
+      stats: { sessions: 14, last: "12 min ago", time: "9h 40m", tokens: "3.1M" } },
+    { id: 2, name: "Campaign wiki", path: "D:\\Writing\\campaign-wiki", pin: true, tags: ["writing"], note: "Obsidian vault for the Tuesday game.",
+      stats: { sessions: 41, last: "yesterday", time: "22h 05m", tokens: "8.7M" } },
+    { id: 3, name: "Budget scripts", path: "C:\\Users\\miris\\src\\budget", pin: false, tags: ["python","personal"], note: "",
+      stats: { sessions: 6, last: "3 days ago", time: "2h 10m", tokens: "640K" } },
+    { id: 4, name: "Client site", path: "E:\\Work\\acme-wp", pin: false, tags: ["wordpress","work"], note: "Staging only — don't touch prod creds.",
+      stats: { sessions: 23, last: "last week", time: "14h 30m", tokens: "5.2M" } },
+    { id: 5, name: "Dotfiles", path: "C:\\Users\\miris\\.dotfiles", pin: false, tags: ["config"], note: "",
+      stats: { sessions: 3, last: "Sep 30", time: "45m", tokens: "120K" } },
+  ],
+  sessions: {
+    1: [ ["a1f3c9e2","Prototype the UI layout and look","today 09:12","38m","210K"], ["7be20d41","Choose the desktop stack","yesterday","1h 12m","480K"], ["c03d88aa","Chart the wayfinder map","Oct 23","2h 01m","910K"], ["e9910b7f","Init repo, glossary","Oct 22","24m","88K"] ],
+    2: [ ["55aa01cc","Session notes for ep. 31","yesterday","52m","330K"], ["98bd3e10","Link audit","Oct 20","1h 30m","700K"] ],
+    3: [ ["3c3c9d22","Categorise September CSV","Oct 21","40m","150K"] ],
+    4: [ ["d1e2f3a4","Fix checkout block","Oct 17","3h 05m","1.4M"], ["0a0b0c0d","PHPStan baseline","Oct 15","1h 10m","420K"] ],
+    5: [ ["f00dbabe","Starship prompt tweaks","Sep 30","45m","120K"] ],
+  },
+  suggestions: [
+    { id: 101, path: "E:\\Programming\\graft", guess: "graft", sessions: 9, last: "2 days ago" },
+    { id: 102, path: "C:\\Users\\miris\\Downloads\\scratch", guess: "scratch", sessions: 1, last: "Oct 2" },
+    { id: 103, path: "E:\\Programming\\archify", guess: "archify", sessions: 4, last: "Oct 12" },
+  ],
+  selected: 1, query: "", tag: null, view: "index", drawer: null, showInbox: false, resumeOpen: false, cursor: 0,
+};
+const allTags = () => [...new Set(S.workspaces.flatMap(w => w.tags))].sort();
+const ws = id => S.workspaces.find(w => w.id === id);
+function filtered() {
+  const q = S.query.toLowerCase();
+  return S.workspaces
+    .filter(w => !S.tag || w.tags.includes(S.tag))
+    .filter(w => !q || (w.name + " " + w.path + " " + w.tags.join(" ")).toLowerCase().includes(q))
+    .sort((a, b) => (b.pin - a.pin));
+}
+function launch(id, mode, sid) {
+  const w = ws(id);
+  const flag = mode === "continue" ? " --continue" : mode === "resume" ? ` --resume ${sid}` : "";
+  toast(`Would run: <span class="mono">wt -d "${w.path}" claude.exe${flag}</span>`);
+}
+function accept(id, name) {
+  const s = S.suggestions.find(x => x.id === id);
+  S.suggestions = S.suggestions.filter(x => x.id !== id);
+  const nid = Date.now();
+  S.workspaces.push({ id: nid, name: name || s.guess, path: s.path, pin: false, tags: [], note: "", stats: { sessions: s.sessions, last: s.last, time: "—", tokens: "—" } });
+  S.sessions[nid] = [];
+  toast(`Added Workspace “${name || s.guess}”`); render();
+}
+function dismiss(id) { S.suggestions = S.suggestions.filter(x => x.id !== id); toast("Dismissed (won't suggest again)"); render(); }
+let tt; function toast(html) { const t = document.getElementById("toast"); t.innerHTML = html; t.style.display = "block"; clearTimeout(tt); tt = setTimeout(() => t.style.display = "none", 3200); }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+function suggCards() {
+  if (!S.suggestions.length) return `<p class="muted">Inbox empty — nothing new found in <span class="mono">~/.claude/projects</span>.</p>`;
+  return S.suggestions.map(s => `
+    <div class="sugg">
+      <div class="grow">
+        <div class="mono">${esc(s.path)}</div>
+        <div class="muted" style="font-size:12px">${s.sessions} Sessions · last ${s.last}</div>
+      </div>
+      <input class="input" style="width:170px" id="nm${s.id}" value="${esc(s.guess)}" placeholder="Name">
+      <button class="btn primary sm" onclick="accept(${s.id}, document.getElementById('nm${s.id}').value)">Add</button>
+      <button class="btn ghost sm" onclick="dismiss(${s.id})">Dismiss</button>
+    </div>`).join("");
+}
+function sessTable(id, compact) {
+  const rows = S.sessions[id] || [];
+  if (!rows.length) return `<p class="muted">No past Sessions.</p>`;
+  return `<table><tr><th>Session</th><th>Started</th>${compact ? "" : "<th>Time</th><th>Tokens</th>"}<th></th></tr>
+    ${rows.map(([sid, title, when, dur, tok]) => `<tr class="sess">
+      <td><div>${esc(title)}</div><div class="mono muted">${sid}</div></td><td class="muted">${when}</td>
+      ${compact ? "" : `<td class="muted">${dur}</td><td class="muted">${tok}</td>`}
+      <td style="text-align:right"><button class="btn sm" onclick="launch(${id},'resume','${sid}')">Resume</button></td></tr>`).join("")}</table>`;
+}
+
+// ---------------- Variant A: sidebar master/detail ----------------
+function VariantA() {
+  const list = filtered(), pinned = list.filter(w => w.pin), rest = list.filter(w => !w.pin);
+  const item = w => `<div class="item ${S.selected === w.id && !S.showInbox ? "sel" : ""}" onclick="S.selected=${w.id};S.showInbox=false;render()">
+      <div style="min-width:0"><div class="n">${w.pin ? '<span class="pin">★</span> ' : ""}${esc(w.name)} ${w.running ? '<span class="dot" title="Session running"></span>' : ""}</div>
+      <div class="muted" style="font-size:12px">${w.stats.last} · ${w.stats.sessions} Sessions</div></div></div>`;
+  const w = ws(S.selected);
+  const main = S.showInbox ? `<h1>Suggestions</h1><p class="muted">Directories found in <span class="mono">~/.claude/projects</span> that aren't Workspaces yet.</p>${suggCards()}`
+    : `<div style="display:flex;justify-content:space-between;align-items:flex-start">
+         <div><h1>${w.pin ? '<span class="pin">★</span> ' : ""}${esc(w.name)}</h1><div class="mono muted" style="margin-top:4px">${esc(w.path)}</div>
+         <div style="margin-top:8px">${w.tags.map(t => `<span class="tag">${t}</span>`).join("")}</div></div>
+         <button class="btn ghost">Edit</button></div>
+       ${w.note ? `<p style="margin:14px 0 0">${esc(w.note)}</p>` : ""}
+       <div class="launch">
+         <button class="btn primary" onclick="launch(${w.id},'new')">▶ New Session</button>
+         <button class="btn" onclick="launch(${w.id},'continue')">↻ Continue last</button>
+       </div>
+       <div class="stats">${[["Sessions", w.stats.sessions],["Last used", w.stats.last],["Session time", w.stats.time],["Tokens", w.stats.tokens]].map(([l,v]) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("")}</div>
+       <h3 style="margin-bottom:8px">Resume a past Session</h3>${sessTable(w.id)}`;
+  return `<div class="A">
+    <aside>
+      <div class="side-head">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b>Code Orchestrate</b><button class="btn ghost sm" title="Add Workspace">＋</button></div>
+        <input class="input" placeholder="Search Workspaces…" value="${esc(S.query)}" oninput="S.query=this.value;render(true)">
+        <div>${allTags().map(t => `<span class="tag ${S.tag === t ? "on" : ""}" style="cursor:pointer" onclick="S.tag=S.tag==='${t}'?null:'${t}';render()">${t}</span>`).join("")}</div>
+      </div>
+      <div class="inbox-link" onclick="S.showInbox=true;render()"><span>Suggestions</span>${S.suggestions.length ? `<span class="badge">${S.suggestions.length}</span>` : ""}</div>
+      <div class="side-list">
+        ${pinned.length ? `<div class="sec">Pinned</div>${pinned.map(item).join("")}` : ""}
+        ${rest.length ? `<div class="sec">All</div>${rest.map(item).join("")}` : ""}
+      </div>
+    </aside>
+    <main>${main}</main></div>`;
+}
+
+// ---------------- Variant B: keyboard-first launcher ----------------
+function VariantB() {
+  const list = filtered();
+  S.cursor = Math.min(S.cursor, Math.max(0, list.length - 1));
+  const rows = list.map((w, i) => {
+    const sel = i === S.cursor;
+    return `<div class="row ${sel ? "sel" : ""}" onclick="S.cursor=${i};S.resumeOpen=false;render()">
+      <div><div>${w.pin ? '<span class="pin">★</span> ' : ""}<b>${esc(w.name)}</b> ${w.running ? '<span class="dot"></span>' : ""} ${w.tags.map(t => `<span class="tag">${t}</span>`).join("")}</div>
+      <div class="mono muted">${esc(w.path)}</div></div>
+      <div class="meta">${w.stats.last}<br>${w.stats.sessions} Sessions · ${w.stats.time} · ${w.stats.tokens} tok</div></div>
+      ${sel ? `<div class="expand">
+        ${w.note ? `<div class="muted" style="font-size:13px">${esc(w.note)}</div>` : ""}
+        <div class="acts">
+          <button class="btn primary sm" onclick="launch(${w.id},'new')">New Session <span class="kbd" style="color:inherit;background:transparent">↵</span></button>
+          <button class="btn sm" onclick="launch(${w.id},'continue')">Continue <span class="kbd">Ctrl ↵</span></button>
+          <button class="btn sm" onclick="S.resumeOpen=!S.resumeOpen;render()">Resume… <span class="kbd">Ctrl R</span></button>
+        </div>
+        ${S.resumeOpen ? `<div class="sesslist">${(S.sessions[w.id] || []).map(([sid, title, when]) => `<div class="r" onclick="launch(${w.id},'resume','${sid}')"><span>${esc(title)} <span class="mono muted">${sid}</span></span><span class="muted">${when}</span></div>`).join("") || '<span class="muted">No past Sessions.</span>'}</div>` : ""}
+      </div>` : ""}`;
+  }).join("");
+  return `<div class="B"><div class="pal">
+    <div class="q"><span class="muted">⌕</span><input id="bq" autofocus placeholder="Jump to a Workspace…  (try #tag)" value="${esc(S.query)}" oninput="S.query=this.value;S.cursor=0;render(true)"><span class="kbd">Ctrl K</span></div>
+    ${S.suggestions.length ? `<div class="strip"><span><b>${S.suggestions.length} new</b> directories found in <span class="mono">~/.claude/projects</span></span><button class="btn sm" onclick="S.showInbox=!S.showInbox;render()">${S.showInbox ? "Hide" : "Review"}</button></div>` : ""}
+    ${S.showInbox ? `<div style="padding:12px 16px;border-bottom:1px solid var(--border)">${suggCards()}</div>` : ""}
+    <div>${rows || '<div class="row muted">No matches.</div>'}</div>
+    <div class="foot"><span><span class="kbd">↑↓</span> move</span><span><span class="kbd">↵</span> new</span><span><span class="kbd">Ctrl ↵</span> continue</span><span><span class="kbd">Ctrl R</span> resume</span><span style="margin-left:auto">Ctrl , settings</span></div>
+  </div></div>`;
+}
+
+// ---------------- Variant C: dashboard cards + drawer ----------------
+function VariantC() {
+  const list = filtered();
+  const card = w => `<div class="card" onclick="S.drawer=${w.id};render()">
+      <div style="display:flex;justify-content:space-between"><b>${esc(w.name)}</b><span>${w.running ? '<span class="dot" title="running"></span> ' : ""}${w.pin ? '<span class="pin">★</span>' : ""}</span></div>
+      <div class="mono muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.path)}</div>
+      <div>${w.tags.map(t => `<span class="tag">${t}</span>`).join("") || '<span class="muted" style="font-size:12px">no tags</span>'}</div>
+      <div class="mini"><div><b>${w.stats.sessions}</b>Sessions</div><div><b>${w.stats.last.replace(" ago","")}</b>Last</div><div><b>${w.stats.time}</b>Time</div><div><b>${w.stats.tokens}</b>Tokens</div></div>
+      <div style="display:flex;gap:6px" onclick="event.stopPropagation()"><button class="btn primary sm" onclick="launch(${w.id},'new')">▶ New</button><button class="btn sm" onclick="launch(${w.id},'continue')">↻ Continue</button></div>
+    </div>`;
+  const pinned = list.filter(w => w.pin), rest = list.filter(w => !w.pin);
+  const index = `<div class="filters"><input class="input" style="max-width:320px" placeholder="Filter…" value="${esc(S.query)}" oninput="S.query=this.value;render(true)">
+      ${allTags().map(t => `<span class="tag ${S.tag === t ? "on" : ""}" style="cursor:pointer" onclick="S.tag=S.tag==='${t}'?null:'${t}';render()">${t}</span>`).join("")}</div>
+    ${pinned.length ? `<div class="h-sec" style="margin-top:0">Pinned</div><div class="grid">${pinned.map(card).join("")}</div>` : ""}
+    ${rest.length ? `<div class="h-sec">All Workspaces</div><div class="grid">${rest.map(card).join("")}</div>` : ""}`;
+  const d = S.drawer && ws(S.drawer);
+  const drawer = d ? `<div class="drawer-bg" onclick="S.drawer=null;render()"></div><div class="drawer">
+      <div style="display:flex;justify-content:space-between"><h2>${esc(d.name)}</h2><button class="btn ghost sm" onclick="S.drawer=null;render()">✕</button></div>
+      <div class="mono muted" style="margin-top:4px">${esc(d.path)}</div>
+      ${d.note ? `<p>${esc(d.note)}</p>` : ""}
+      <div class="bigbtns"><button class="btn primary" onclick="launch(${d.id},'new')">▶ New Session<br><span style="font-size:12px;opacity:.7">Fresh context</span></button>
+        <button class="btn" onclick="launch(${d.id},'continue')">↻ Continue last<br><span class="muted" style="font-size:12px">${(S.sessions[d.id]||[])[0]?.[1] ?? "—"}</span></button></div>
+      <div class="h-sec">Resume a past Session</div>${sessTable(d.id, true)}
+      <div class="h-sec">Details</div><div class="muted">Pinned: ${d.pin ? "yes" : "no"} · Tags: ${d.tags.join(", ") || "none"}</div>
+    </div>` : "";
+  return `<div class="C">
+    <header><b>Code Orchestrate</b>
+      <div class="tabs"><button class="tab ${S.view === "index" ? "on" : ""}" onclick="S.view='index';render()">Workspaces</button>
+      <button class="tab ${S.view === "inbox" ? "on" : ""}" onclick="S.view='inbox';render()">Inbox ${S.suggestions.length ? `<span class="badge">${S.suggestions.length}</span>` : ""}</button></div>
+      <span style="margin-left:auto"></span><button class="btn sm">＋ Add Workspace</button><button class="btn ghost sm">⚙</button></header>
+    <div class="body">${S.view === "inbox" ? `<h2 style="margin-bottom:6px">Inbox</h2><p class="muted">Found in <span class="mono">~/.claude/projects</span>. Name and add, or dismiss.</p>${suggCards()}` : index}</div>
+    ${drawer}</div>`;
+}
+
+// ---------------- switcher + render ----------------
+const VARIANTS = { A: ["Sidebar master/detail", VariantA], B: ["Keyboard launcher", VariantB], C: ["Dashboard cards + drawer", VariantC] };
+const keys = Object.keys(VARIANTS);
+let current = new URLSearchParams(location.search).get("variant") ?? "A"; if (!VARIANTS[current]) current = "A";
+function setVariant(k) { current = k; const u = new URL(location); u.searchParams.set("variant", k); history.replaceState(null, "", u); render(); }
+function cycle(d) { setVariant(keys[(keys.indexOf(current) + d + keys.length) % keys.length]); }
+function render(keepFocus) {
+  const a = document.activeElement, pos = a && a.selectionStart, ph = a && a.placeholder;
+  document.getElementById("app").innerHTML = VARIANTS[current][1]();
+  document.getElementById("vlabel").textContent = `${current} (${VARIANTS[current][0]}) · ${document.documentElement.dataset.theme}`;
+  if (keepFocus && ph) { const el = [...document.querySelectorAll("input")].find(i => i.placeholder === ph); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }
+}
+function setTheme(t) { document.documentElement.dataset.theme = t; render(); }
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+document.getElementById("theme").onclick = () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+document.addEventListener("keydown", e => {
+  const typing = e.target.matches("input, textarea, [contenteditable]");
+  if (current === "B" && (e.target.id === "bq" || !typing)) {
+    const n = filtered().length, w = filtered()[S.cursor];
+    if (e.key === "ArrowDown") { S.cursor = Math.min(n - 1, S.cursor + 1); S.resumeOpen = false; render(true); e.preventDefault(); return; }
+    if (e.key === "ArrowUp") { S.cursor = Math.max(0, S.cursor - 1); S.resumeOpen = false; render(true); e.preventDefault(); return; }
+    if (e.key === "Enter" && w) { launch(w.id, e.ctrlKey ? "continue" : "new"); return; }
+    if (e.key === "r" && e.ctrlKey && w) { S.resumeOpen = !S.resumeOpen; render(true); e.preventDefault(); return; }
+  }
+  if (typing) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+  if (e.key === "t") document.getElementById("theme").click();
+});
+document.documentElement.dataset.theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+render();
+</script>
+</body>
+</html>
